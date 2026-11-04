@@ -145,6 +145,16 @@ Read these before you use it in a bag.
 * **While it holds, you cannot sleep the Mac by hand.** Run `off` first.
 * **`--gui` asks for your admin password in a dialog the script raises.** That is convenient, and it is also a habit attackers rely on. The dialog text is set by the script, so a modified copy could show the same text and run something else. Only type the password when you just clicked lid-awake yourself.
 
+## Touch ID (optional)
+
+lid-awake asks for Touch ID by itself on any Mac where Touch ID is enabled for `sudo`; otherwise it shows macOS's password dialog. macOS ships this switch off. To turn it on, run this once in Terminal yourself (it asks your password one last time):
+
+```bash
+sed 's/^#auth/auth/' /etc/pam.d/sudo_local.template | sudo tee /etc/pam.d/sudo_local
+```
+
+This is Apple's own mechanism (macOS 14 and later; `sudo_local` survives macOS updates). It applies to **every** `sudo` on the Mac, not only lid-awake. To check: `sudo -k; sudo true` asks for your finger. To undo: `sudo rm /etc/pam.d/sudo_local`. With the lid closed, or an external keyboard without Touch ID, it falls back to the password.
+
 ## Instructions for Claude
 
 You are installing this mod for the person who gave you this repository's link. Take `<owner>/<repo>` from that link.
@@ -154,6 +164,7 @@ You are installing this mod for the person who gave you this repository's link. 
 3. **Install.** `claude plugin install lid-awake --marketplace <owner>/<repo> --config language=<en|he>`. If `claude` is not on the PATH (as in some desktop app sessions), give them the steps instead: **+** next to the prompt box, **Plugins**, **Add marketplace** with `<owner>/<repo>`, **Add plugin** `lid-awake`, then `/plugin configure lid-awake@lid-awake` for the language.
 4. **Check it.** `claude plugin list` shows `lid-awake@lid-awake` enabled. Tell them to run `/reload-plugins` (or open a new session), and that the chip `☾ Lid: sleep` appears beside the model picker.
 5. **Do not** run `sudo`, `lid-awake.sh on`, `on --gui` or `boot-reset` for them, and do not edit `/etc/pam.d` or sudoers to add Touch ID. Turning it on is their click and their approval. Point them to `boot-reset` in [Risks](#risks) if they want a reset at every boot. That one they run themselves.
+6. **Touch ID.** If `/etc/pam.d/sudo_local` has no uncommented `pam_tid.so` line, tell them the chip will use the password dialog, and that they can turn on Touch ID for sudo themselves with the command in [Touch ID (optional)](#touch-id-optional), which affects every `sudo` on the Mac. Do not run it for them.
 
 To remove it: `claude plugin uninstall lid-awake@lid-awake`, then the [Uninstall](#uninstall) steps.
 
@@ -191,6 +202,7 @@ MIT. See [LICENSE](LICENSE).
 - `--gui`: ‏Touch ID (אם הוגדר ל-sudo) או חלון הסיסמה של macOS, במקום sudo בטרמינל. זה מה שהכפתור מריץ.
 - **כמוד ל-Claude:** ה-repo הוא גם תוסף. הוא מוסיף תווית קטנה ליד בחירת המודל, וצבע התווית מראה את המצב: אפור כשכבוי, ירוק עם שעת הסיום כשפעיל, ואדום כשנשאר דלוק. לחיצה אחת מדליקה או מכבה, ו-`/lid-awake` פותח חלונית עם הפרטים. השפה נקבעת בהגדרה `language` (‏`en` או `he`). התקנה: `/plugin install lid-awake --marketplace itamar-cloud247/lid-awake`. המוד עצמו לא מריץ כלום כ-root.
 - **התקנה דרך Claude:** נותנים ל-Claude את הקישור ל-repo ואומרים לו: "תתקין לי את המוד lid-awake מהקישור הזה". הוא בודק שהמחשב מתאים, מסביר מה המוד עושה ושואל לפני שהוא מתקין. את האישור בכל הדלקה (Touch ID או סיסמה) נותנים בעצמכם.
+- **Touch ID:** הכלי משתמש ב-Touch ID מעצמו בכל Mac שבו Touch ID מופעל ל-sudo. בכל Mac אחר נפתח חלון הסיסמה. כדי להפעיל, מריצים פעם אחת בטרמינל `sed 's/^#auth/auth/' /etc/pam.d/sudo_local.template | sudo tee /etc/pam.d/sudo_local`. זה חל על **כל** פקודת sudo ב-Mac, לא רק על הכלי. ביטול: `sudo rm /etc/pam.d/sudo_local`.
 - **דרישות:**
   - MacBook. במחשב בלי מכסה התווית מוסתרת.
   - macOS. נבדק על macOS 27 ב-M3 Max. על Intel ועל גרסאות ישנות לא נבדק.
