@@ -150,9 +150,10 @@ export const register: Register = (on, options) => {
     const { Box, Text, Button } = $.ui.resolve(e)
     const c = chip(t, l)
     return (
-      <Box flexDirection="row" gap={1}>
+      <Box flexDirection="row" gap={1} alignItems="center">
         <Button key="lid-chip" plain onPress={() => void toggle($, t)}>
-          <Text color={c.color} dimColor={!c.color}>{rtl(c.text)}</Text>
+          {/* body size, as the model picker beside it: the desktop sizes the button's frame to its text */}
+          <Text size="body" color={c.color} dimColor={!c.color}>{rtl(c.text)}</Text>
         </Button>
         {below}
       </Box>

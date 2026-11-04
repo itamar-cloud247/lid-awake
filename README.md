@@ -25,7 +25,7 @@ Claude reads [Instructions for Claude](#instructions-for-claude) below, checks t
 ## Quick start
 
 ```bash
-curl -fsSLO https://raw.githubusercontent.com/<owner>/lid-awake/main/lid-awake.sh   # or clone the repo
+curl -fsSLO https://raw.githubusercontent.com/itamar-cloud247/lid-awake/main/lid-awake.sh   # or clone the repo
 chmod +x lid-awake.sh
 ./lid-awake.sh on        # asks your sudo password once; AC + battery, cap 12h, releases at 15% battery
 # close the lid, go
@@ -46,10 +46,10 @@ The repository is also a Claude Code plugin. It puts a small chip beside the mod
 `/lid-awake` opens a pane with the details. The mod runs the bundled `lid-awake.sh` (`state` every 30s, `on --gui` / `off --gui` on a click). You approve with Touch ID (when sudo has `pam_tid`) or macOS's password dialog. The mod itself runs nothing as root. The labels are in English or Hebrew: the `language` option (`en` or `he`).
 
 ```
-/plugin install lid-awake --marketplace <owner>/lid-awake
+/plugin install lid-awake --marketplace itamar-cloud247/lid-awake
 ```
 
-From a shell: `claude plugin install lid-awake --marketplace <owner>/lid-awake` (add `--config language=he` for Hebrew). In the Claude desktop app: click **+** next to the prompt box, then **Plugins**, **Add marketplace** with `<owner>/lid-awake`, then **Add plugin**. Then run `/reload-plugins`, or open a new session.
+From a shell: `claude plugin install lid-awake --marketplace itamar-cloud247/lid-awake` (add `--config language=he` for Hebrew). In the Claude desktop app: click **+** next to the prompt box, then **Plugins**, **Add marketplace** with `itamar-cloud247/lid-awake`, then **Add plugin**. Then run `/reload-plugins`, or open a new session.
 
 Read the script before you run it with sudo. It is under 200 lines. Keep it where only you can write it: whatever is in the file runs as root the next time you type your password.
 
@@ -189,7 +189,7 @@ MIT. See [LICENSE](LICENSE).
 
 - `on --ac-only`: בלי sudo. מחזיק רק כשהמחשב מחובר לחשמל.
 - `--gui`: ‏Touch ID (אם הוגדר ל-sudo) או חלון הסיסמה של macOS, במקום sudo בטרמינל. זה מה שהכפתור מריץ.
-- **כמוד ל-Claude:** ה-repo הוא גם תוסף. הוא מוסיף תווית קטנה ליד בחירת המודל, וצבע התווית מראה את המצב: אפור כשכבוי, ירוק עם שעת הסיום כשפעיל, ואדום כשנשאר דלוק. לחיצה אחת מדליקה או מכבה, ו-`/lid-awake` פותח חלונית עם הפרטים. השפה נקבעת בהגדרה `language` (‏`en` או `he`). התקנה: `/plugin install lid-awake --marketplace <owner>/lid-awake`. המוד עצמו לא מריץ כלום כ-root.
+- **כמוד ל-Claude:** ה-repo הוא גם תוסף. הוא מוסיף תווית קטנה ליד בחירת המודל, וצבע התווית מראה את המצב: אפור כשכבוי, ירוק עם שעת הסיום כשפעיל, ואדום כשנשאר דלוק. לחיצה אחת מדליקה או מכבה, ו-`/lid-awake` פותח חלונית עם הפרטים. השפה נקבעת בהגדרה `language` (‏`en` או `he`). התקנה: `/plugin install lid-awake --marketplace itamar-cloud247/lid-awake`. המוד עצמו לא מריץ כלום כ-root.
 - **התקנה דרך Claude:** נותנים ל-Claude את הקישור ל-repo ואומרים לו: "תתקין לי את המוד lid-awake מהקישור הזה". הוא בודק שהמחשב מתאים, מסביר מה המוד עושה ושואל לפני שהוא מתקין. את האישור בכל הדלקה (Touch ID או סיסמה) נותנים בעצמכם.
 - **דרישות:**
   - MacBook. במחשב בלי מכסה התווית מוסתרת.

@@ -1,6 +1,6 @@
 {
   "name": "lid-awake",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Keep a MacBook awake with the lid closed, on battery too: a small colored chip beside the model picker (one click on/off) and a details pane, running the bundled lid-awake.sh. English or Hebrew labels.",
   "types": "./types/index.d.ts",
   "userConfig": {
