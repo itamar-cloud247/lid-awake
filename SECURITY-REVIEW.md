@@ -16,6 +16,19 @@ Two passes over the original script (the one the field tests ran on): the author
 | 10 | Info | Wall-clock cap; system-wide flag; MDM; behaviour at 0% battery with sleep disabled unknown. | Documented. Minimum `--min-batt` raised from 5 to 10. |
 | 11 | Info | Some Apple Silicon setups reportedly keep the internal panel lit under a closed lid with sleep disabled (third-party report). | Added `pmset displaysleepnow` on lid close. Not yet verified on hardware. |
 
+## `--gui` path (added 04/11/2026 from hub commit db3d3cd)
+
+`on --gui` / `off --gui` replace `sudo` with `osascript … do shell script (item 1 of argv) with administrator privileges`.
+
+| # | Sev | Finding | Status |
+|---|---|---|---|
+| G1 | Info (good) | The command and the prompt are AppleScript `argv`, not source, so no AppleScript injection. `do shell script` uses `/bin/sh` with a fixed `PATH`. The guard is passed `${(qq)}`-quoted. | Kept. Verified: the generated command parses under `/bin/sh` and `zsh`, returns at once, and leaves the guard with ppid 1. |
+| G2 | Medium | It trains users to type the admin password into a dialog raised by a script. Any process that can run the script (an agent session included) can raise it, and a tampered copy can show the same text and run something else. | Inherent to the GUI path, same root cause as #4. Documented in README; English prompt; the human still has to approve every root step. |
+| G3 | Low (verify) | Real uid of the root process under `do shell script … with administrator privileges` not verified. If it stayed the user's, the user could signal the guard, so `zsh -f` (no `-p`) would drop privileges. | Fail-safe either way: without root, the guard cannot set the flag and `on` reports failure. TESTING.md checks `ps -o ruid` of the guard. |
+| G4 | Low | `on --gui` blocks while the dialog is open; the loop holds `caffeinate` (AC only) meanwhile. | The loop waits at most 180s for the guard, then exits. `on` kills it on cancel. |
+| G5 | Low | The hub version's `--gui` startup checked only `SleepDisabled`, and its `sudo` branch still ran `pmset` through the user's `PATH`. | Not in this draft (guard-alive check, fixed `PATH`). |
+| G6 | Low | The loop's exit notification said "will sleep now" even if the flag was still 1 (e.g. the guard was SIGKILLed). | Fixed: waits up to 15s for the flag to drop, otherwise warns to run `off`. |
+
 Pid reuse: the guard and `off` accept a pid only if its command line carries the loop marker, so the risk is negligible.
 
 Not done (design choices for later): running the guard from launchd instead of sudo; restoring a previous non-zero `SleepDisabled` (`on` refuses in that case instead).

@@ -5,6 +5,7 @@ The original script passed two closed-lid battery runs: 5 min with 52 samples, a
 Done without root (04/11/2026 draft):
 - [x] `zsh -n`. Bad options rejected (`--hours 99`, `--min-batt 'a[$(id)]'`).
 - [x] Loop started with junk arguments → end=0, min_batt=100, ac_only=1 → exits "cap reached" at once. No command substitution ran.
+- [x] `as_root` guard command (stubbed guard) under `/bin/sh -c` (as `do shell script` runs it) and `zsh -f -c`: returns at once, guard ppid 1, marker set, removed on TERM.
 - [x] Guard snippet with `pmset`/`logger` stubbed: bad pid refuses to start. Junk min/end → ends at once ("cap"). End beyond 72h clamped. Loop killed → "loop gone". USR1 → reset ("signal"). HUP and TSTP ignored (state `S`, not `T`). TERM → reset.
 
 Needs a real run (sudo):
@@ -18,4 +19,7 @@ Needs a real run (sudo):
 - [ ] `boot-reset install` while a hold runs → hold is not interrupted. Reboot mid-hold → `SleepDisabled=0` and the marker is gone. `sudo pmset -a disablesleep 1` by hand (no marker) + reboot → still 1 (left alone). `boot-reset uninstall` removes it. Check whether your EDR alerted.
 - [ ] Two `on` at the same moment (two Terminal tabs) → one starts, the other says another `on` is starting.
 - [ ] `sudo -k; ./lid-awake.sh on` with `Defaults timestamp_timeout=0` → "sudo -n failed", nothing left running.
+- [ ] `on --gui`: macOS dialog appears with the English prompt; Cancel → "no admin rights … stopped", nothing left running. OK → guard running with ppid 1 and **`ps -o ruid= -p <guard>` = 0**; `state` prints `on 1 HH:MM full`.
+- [ ] Leave the `--gui` dialog open 2 min, then OK → hold starts (loop waits up to 180s).
+- [ ] `sudo kill -9 <guard>` → loop exits, notification warns that SleepDisabled is still 1; `off --gui` clears it.
 - [ ] `on --ac-only` (no sudo) on AC, lid closed 5 min → awake; unplug → sleeps.

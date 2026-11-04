@@ -23,7 +23,9 @@ Read the script before you run it with sudo. It is under 200 lines. Keep it wher
 |---|---|
 | `on [--hours 1-72] [--min-batt 10-90]` | AC and battery. Needs sudo once. Defaults: 12h, 15%. |
 | `on --ac-only [--until-idle]` | No sudo. Holds only while plugged in. Unplugged + lid closed sleeps as usual. `--until-idle` lets go 10 min after Claude Desktop stops working. |
+| `on --gui` / `off --gui` | Same, but admin rights come from macOS's own password dialog instead of `sudo` in a terminal. For a menu-bar button or a launcher. |
 | `off` | Stops the hold. If `SleepDisabled` is still 1 after 12s, resets it (sudo) and exits non-zero if that fails. |
+| `state` | One line for widgets: `on\|off <SleepDisabled 0\|1> <until HH:MM\|-> <full\|ac\|->`. |
 | `status` | Loop, root guard, `SleepDisabled`, power assertions, last log lines. Warns about a leftover `SleepDisabled=1`. |
 | `boot-reset install` / `uninstall` | Optional. A one-line root job that, at every boot, runs `pmset -a disablesleep 0` if lid-awake was the one that set it. See [Risks](#risks). |
 
@@ -58,9 +60,10 @@ you ── on ──► user loop (no root)                         root guard (
 ### Security design
 
 * **Small root surface.** Root runs only a fixed zsh snippet embedded in the script (`zsh -f`, no rc files). It has a fixed `PATH` (`/usr/bin:/bin:/usr/sbin:/sbin`) and `cd /`. It reads no user-writable file. Its three arguments (loop pid, battery %, end time) are re-validated as digits inside the guard. A bad value falls back to the one that ends the hold, and the end time is capped at 72h whatever the caller passes.
-* **Detached from sudo.** The guard is started in the background, and sudo returns right away. The user-level side therefore cannot reach it with signals relayed through sudo. It exits through its reset trap on INT/TERM/QUIT/USR1/USR2/ALRM/PIPE/XCPU/XFSZ. It ignores HUP, so closing the Terminal window does not end the hold, and it ignores TSTP, so it cannot be paused while holding.
+* **Detached from sudo.** The guard is started in the background, and sudo (or the `--gui` dialog) returns right away. The user-level side therefore cannot reach it with signals relayed through sudo. It exits through its reset trap on INT/TERM/QUIT/USR1/USR2/ALRM/PIPE/XCPU/XFSZ. It ignores HUP, so closing the Terminal window does not end the hold, and it ignores TSTP, so it cannot be paused while holding.
 * **Fail-safe parsing.** Every value from `pmset`/`notifyutil` that feeds arithmetic must be digits. If it is not, battery reads as 0% and thermal as "heavy", and the hold ends. The battery is read from the `InternalBattery` line only, so a UPS at 100% cannot hide a laptop battery at 8%.
 * **One `on` at a time.** A lock directory stops two `on` runs from racing into two loops and two guards. `on` also fails clearly when `sudo -n` cannot reuse the ticket it just got (for example, `timestamp_timeout=0`).
+* **`--gui` passes data, not code, to AppleScript.** The root command and the dialog text reach `osascript` as arguments (`on run argv`), never spliced into AppleScript source. `do shell script` runs `/bin/sh` with a fixed `PATH`, and the guard snippet is single-quoted (`${(qq)…}`).
 * **Marker for the boot reset.** The guard creates `/var/db/lid-awake.active` (root-only) when it sets the flag, and removes it when it resets. `boot-reset` resets only when that marker is present, so a `SleepDisabled=1` an admin set on purpose is left alone.
 * **No pid trust.** `off`, `status` and the guard only accept a pid whose command line carries the loop's marker. A stale or edited pid file cannot make `off` kill some other process.
 * **Leftover detection.** `on` refuses to start if `SleepDisabled=1` is already set (left over from a reboot, a crash, or another tool). It also refuses to report success unless the guard process is running and the flag is set. `status` warns about a leftover. The fixed `PATH` and `/usr/bin/sudo` keep a planted `sudo`/`pmset`/`grep` earlier in your `PATH` out of the picture.
@@ -106,6 +109,7 @@ Read these before you use it in a bag.
 * **Do not mix it with other tools that toggle `SleepDisabled`.** When one of them ends, it resets the flag for all of them. `on` refuses to start while the flag is already set.
 * **`SleepDisabled` is system-wide**, so it affects every user on the Mac. Managed (MDM) Macs may block or flag it.
 * **While it holds, you cannot sleep the Mac by hand.** Run `off` first.
+* **`--gui` asks for your admin password in a dialog the script raises.** That is convenient, and it is also a habit attackers rely on. The dialog text is set by the script, so a modified copy could show the same text and run something else. Only type the password when you just clicked lid-awake yourself.
 
 ## Uninstall
 
@@ -138,6 +142,8 @@ MIT. See [LICENSE](LICENSE).
 </div>
 
 - `on --ac-only`: בלי sudo. מחזיק רק כשהמחשב מחובר לחשמל.
+- `--gui`: חלון הסיסמה של macOS במקום sudo בטרמינל, לכפתור או למשגר.
+- `state`: שורה אחת לווידג'ט.
 - `--until-idle`: משחרר 10 דקות אחרי ש-Claude Desktop מפסיק לעבוד.
 - `--hours` ו-`--min-batt`: מגבלת זמן ורצפת סוללה (10%–90%).
 
@@ -189,6 +195,7 @@ MacBook Pro M3 Max, על סוללה, נקודה חמה מאייפון, ו-FortiC
 - **`SleepDisabled` נשאר אחרי Restart.** עד שמריצים `off`, המחשב לא ישן, גם לא מתפריט Apple.
   - `status` מזהיר על זה.
   - `boot-reset install` מאפס בכל הפעלה, עם LaunchDaemon קטן, ורק אם lid-awake הוא שהדליק את הדגל. כלי EDR עלולים לסמן אותו כ-persistence.
+- **`--gui`:** מקלידים סיסמה רק כשאתם בעצמכם לחצתם על lid-awake עכשיו. את הטקסט בחלון קובע הסקריפט.
 - **לא לשלב** עם כלים אחרים שמשנים את `SleepDisabled`.
 
 </div>

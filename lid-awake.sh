@@ -4,7 +4,8 @@
 #   ./lid-awake.sh on --hours 4 --min-batt 20
 #   ./lid-awake.sh on --ac-only            # no sudo: AC only; unplugged + lid closed sleeps as usual
 #   ./lid-awake.sh on --ac-only --until-idle   # ...and let go 10 min after Claude Desktop stops working
-#   ./lid-awake.sh off | status
+#   ./lid-awake.sh off | status | state     # state: one line for a menu-bar/status widget
+#   ./lid-awake.sh on --gui / off --gui    # admin rights from macOS's own password dialog instead of sudo in a terminal
 #   ./lid-awake.sh boot-reset install|uninstall   # optional: reset SleepDisabled to 0 at every boot (sudo)
 # How: a user loop holds `caffeinate -s` (PreventSystemSleep, honoured on AC only). Plain `on` also starts a small root
 # guard (sudo) that sets `pmset -a disablesleep 1`, the only thing that keeps a closed lid awake on battery, and puts it
@@ -18,12 +19,13 @@ PATH=/usr/bin:/bin:/usr/sbin:/sbin   # fixed, so nothing in the user's PATH can 
 STATE="$HOME/Library/Application Support/lid-awake"
 PIDF="$STATE/loop.pid"
 LOG="$HOME/Library/Logs/lid-awake.log"
+INFO="$STATE/loop.info"              # "<end epoch> <ac_only>" while the loop runs, for `state`
 TAG=__lid_awake_loop                 # the loop's argv marker; `off`, `status` and the guard only trust a pid that has it
 BOOT_LABEL=local.lid-awake.boot-reset
 BOOT_PLIST=/Library/LaunchDaemons/$BOOT_LABEL.plist
 MARK=/var/db/lid-awake.active        # root-only: the guard creates it with disablesleep 1 and removes it with 0
 RESET="/usr/bin/pmset -a disablesleep 0; /bin/rm -f $MARK"
-HOURS=12 MIN_BATT=15 ACONLY=0 UNTIL_IDLE=0 GRACE=10
+HOURS=12 MIN_BATT=15 ACONLY=0 UNTIL_IDLE=0 GRACE=10 GUI=0
 mkdir -p "$STATE" "${LOG:h}"
 
 running() { [[ -f $PIDF && $(<$PIDF) == <-> ]] && ps -p "$(<$PIDF)" -o command= 2>/dev/null | grep -qF -- " $TAG " }
@@ -38,12 +40,24 @@ thermal() { num "$(notifyutil -g com.apple.system.thermalpressurelevel | awk '{p
 sleep_disabled() { pmset -g | grep -qE '^ *SleepDisabled[[:space:]]+1' }
 claude_busy() { pmset -g assertions | grep -qE 'pid [0-9]+\(Claude\).*NoIdleSleepAssertion' }
 notify() { osascript -e 'on run argv' -e 'display notification (item 1 of argv) with title "lid-awake"' -e 'end run' "$1" >/dev/null 2>&1 }
-usage() { print "usage: $ME on [--hours N] [--min-batt P] [--ac-only [--until-idle]] | off | status | boot-reset install|uninstall"; exit 2 }
+# Runs a fixed shell command line as root: sudo (after `sudo -v`), or with --gui macOS's administrator dialog
+# (`do shell script`, which itself uses a fixed PATH). The command and the prompt reach AppleScript as arguments, never
+# spliced into its source.
+as_root() {
+  if (( GUI )); then
+    osascript - "$1" "lid-awake wants to keep this Mac awake with the lid closed, on battery too." >/dev/null 2>&1 <<'OSA'
+on run argv
+  do shell script (item 1 of argv) with administrator privileges with prompt (item 2 of argv)
+end run
+OSA
+  else /usr/bin/sudo -n /bin/zsh -f -c "$1"; fi
+}
+usage() { print "usage: $ME on [--hours N] [--min-batt P] [--ac-only [--until-idle]] | off [--gui] | status | state | boot-reset install|uninstall"; exit 2 }
 
 # Root guard: self-contained, reads nothing from user-writable files, logs to syslog only (`log show --predicate
 # 'eventMessage CONTAINS "lid-awake"'`). Args: loop pid, min battery %, end epoch. Each one is checked here again and
-# a bad value falls back to the one that releases the hold. It is detached from sudo (LAUNCH below), so once running it
-# is a root process the user cannot signal; INT/TERM/QUIT/USR1/USR2/ALRM/PIPE/XCPU/XFSZ still end it through the EXIT reset.
+# a bad value falls back to the one that releases the hold. It is started in the background by as_root, which then returns,
+# so it is not a child of sudo and the user cannot signal it; INT/TERM/QUIT/USR1/USR2/ALRM/PIPE/XCPU/XFSZ still end it through the EXIT reset.
 GUARD='
 PATH=/usr/bin:/bin:/usr/sbin:/sbin; cd /
 num() { [[ $1 == <-> ]] && print $1 || print $2 }
@@ -68,17 +82,17 @@ while :; do
   (( t >= 2 )) && { why="thermal $t"; break }
   sleep 10 & wait $!
 done'
-# Runs under sudo, starts the guard in the background and returns, so sudo exits and does not relay signals to it.
-LAUNCH='/usr/bin/nohup /bin/zsh -f -c "$1" lid-awake-guard "${@:2}" </dev/null >/dev/null 2>&1 &!'
 
 case "${1:-}" in
   off|stop)
+    [[ ${2:-} == --gui ]] && GUI=1
     running && { kill "$(<$PIDF)"; print "stopped" } || print "not running"
     if sleep_disabled; then
       sleep 12   # the guard checks every 10s and puts disablesleep back itself
       if sleep_disabled; then
         print "SleepDisabled is still 1 (guard gone?), resetting:"
-        /usr/bin/sudo /bin/sh -c "$RESET" && ! sleep_disabled || { print "reset FAILED: run 'sudo pmset -a disablesleep 0'"; exit 1 }
+        (( GUI )) || /usr/bin/sudo -v
+        as_root "$RESET" && ! sleep_disabled || { print "reset FAILED: run 'sudo pmset -a disablesleep 0'"; exit 1 }
       fi
     fi
     exit 0 ;;
@@ -92,6 +106,12 @@ case "${1:-}" in
     [[ -e $MARK ]] && print "marker $MARK: set (lid-awake set SleepDisabled=1)"
     [[ -f $BOOT_PLIST ]] && print "boot-reset: installed" || print "boot-reset: not installed"
     pmset -g assertions | grep -E 'caffeinate|Claude'; tail -5 "$LOG" 2>/dev/null; exit 0 ;;
+  state)   # one line: on|off <SleepDisabled 0|1> <until HH:MM|-> <full|ac|->
+    if running; then
+      e=0 a=0; [[ -f $INFO ]] && read -r e a < "$INFO"
+      print "on $(sleep_disabled && print 1 || print 0) $([[ $e == <1-> ]] && date -r $e '+%H:%M' || print -- -) $([[ $a == 1 ]] && print ac || print full)"
+    else print "off $(sleep_disabled && print 1 || print 0) - -"; fi
+    exit 0 ;;
   boot-reset)
     case "${2:-}" in
       install)
@@ -122,6 +142,7 @@ case "${1:-}" in
       --min-batt) [[ ${2:-} == <10-90> ]] || { print -r -- "--min-batt: 10-90"; exit 2 }; MIN_BATT=$2; shift ;;
       --ac-only)  ACONLY=1 ;;
       --until-idle) UNTIL_IDLE=1 ;;
+      --gui)      GUI=1 ;;
       *) usage ;;
     esac; shift; done
     # One `on` at a time: without this, two runs at once could both pass `running` and leave an orphan loop.
@@ -130,14 +151,14 @@ case "${1:-}" in
     running && { print "already running (pid $(<$PIDF)); '$ME off' first to change options"; exit 0 }
     # A SleepDisabled=1 left by a reboot or crash would keep the lid awake on battery with no guard watching it.
     sleep_disabled && { print "SleepDisabled=1 is left over from an earlier run; '$ME off' first"; exit 1 }
-    (( ACONLY )) || { print "sudo is needed once, for pmset disablesleep (battery + closed lid):"; /usr/bin/sudo -v || exit 1 }
+    (( ACONLY || GUI )) || { print "sudo is needed once, for pmset disablesleep (battery + closed lid):"; /usr/bin/sudo -v || exit 1 }
     end=$(( $(date +%s) + HOURS * 3600 ))
     nohup /bin/zsh -f "$SELF" $TAG $end $MIN_BATT $ACONLY $UNTIL_IDLE >/dev/null 2>&1 &
     lpid=$!; print $lpid > "$PIDF"   # nohup execs zsh, so this is the loop's own pid
     if (( ! ACONLY )); then
       sleep 1
-      /usr/bin/sudo -n /bin/zsh -f -c "$LAUNCH" lid-awake-launch "$GUARD" $lpid $MIN_BATT $end ||
-        { kill $lpid; print "sudo -n failed (sudo ticket expired, or timestamp_timeout=0), stopped"; exit 1 }
+      as_root "/usr/bin/nohup /bin/zsh -f -c ${(qq)GUARD} lid-awake-guard $lpid $MIN_BATT $end </dev/null >/dev/null 2>&1 &" ||
+        { kill $lpid; print "no admin rights (dialog cancelled, or sudo ticket expired / timestamp_timeout=0), stopped"; exit 1 }
       for i in {1..10}; do guard_alive $lpid && sleep_disabled && break; sleep 1; done
       guard_alive $lpid && sleep_disabled || { kill $lpid; print "guard did not start, stopped"; exit 1 }
     fi
@@ -149,13 +170,22 @@ esac
 
 # The loop. Its arguments come from `on` above; anything else falls back to values that end the hold.
 end=$(num "${1:-}" 0) MIN_BATT=$(num "${2:-}" 100) ACONLY=$(num "${3:-}" 1) UNTIL_IDLE=$(num "${4:-}" 1)
-print $$ > "$PIDF"
+print $$ > "$PIDF"; print "$end $ACONLY" > "$INFO"
 idle_since=0 cpid=0 why="" last="" stop="" lidwas=open
 release() { (( cpid )) && kill $cpid 2>/dev/null; cpid=0 }
-trap 'release; log "exit${stop:+ ($stop)}"; rm -f "$PIDF"; [[ -n $stop ]] && notify "Off: $stop. A closed lid will sleep now."' EXIT
+bye() {
+  release; log "exit${stop:+ ($stop)}"; rm -f "$PIDF" "$INFO"
+  [[ -z $stop ]] && return
+  # The guard notices within 10s that we are gone. Only say "will sleep" once the flag is really back to 0.
+  for i in {1..15}; do sleep_disabled || break; sleep 1; done
+  sleep_disabled && notify "Off: $stop. WARNING: SleepDisabled is still 1, run '$ME off'." ||
+    notify "Off: $stop. A closed lid will sleep now."
+}
+trap bye EXIT
 trap 'exit 0' INT TERM
 log "start until=$(date -r $end '+%F %H:%M') min_batt=$MIN_BATT ac_only=$ACONLY until_idle=$UNTIL_IDLE"
-(( ACONLY )) || for i in {1..20}; do guard_alive $$ && break; sleep 1; done   # `on` starts the guard after us
+# `on` starts the guard after us, and with --gui only once the password dialog is answered; it kills us if that fails.
+(( ACONLY )) || for i in {1..180}; do guard_alive $$ && break; sleep 1; done
 while :; do
   now=$(date +%s)
   if (( UNTIL_IDLE )); then
