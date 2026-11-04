@@ -9,7 +9,7 @@ import type { LidState } from '../types'
 // Touch ID for sudo (when the Mac has pam_tid) or macOS's own password dialog. Labels in English or Hebrew: the
 // `language` option.
 const PANE = 'lid-awake'
-const OFF: LidState = { known: false, failed: false, on: false, sleepDisabled: false, until: '', mode: '', busy: false }
+const OFF: LidState = { known: false, failed: false, hasLid: true, on: false, sleepDisabled: false, until: '', mode: '', busy: false }
 const lid = atom({ plugin: 'lid-awake', key: 'lid' } as const, OFF)
 
 const RTL_START = '‏‫' // RLM + right-to-left embedding
@@ -31,6 +31,7 @@ const TEXT = {
     noAnswer: 'lid-awake.sh did not answer',
     checking: 'Checking lid-awake…',
     macOnly: 'lid-awake.sh did not answer. It runs on macOS only.',
+    noLid: 'This Mac has no lid, so there is nothing to keep awake when it closes.',
     busy: 'One moment… (waiting for Touch ID / password)',
     headOn: (until: string, ac: boolean) => `● On${until ? ` until ${until}` : ''}${ac ? ' (on AC only)' : ''}`,
     headLeft: '⚠ Left on with nothing watching it (restart or crash)',
@@ -56,6 +57,7 @@ const TEXT = {
     noAnswer: 'lid-awake.sh לא הגיב',
     checking: 'בודק את lid-awake…',
     macOnly: 'lid-awake.sh לא הגיב. הוא רץ רק ב-macOS.',
+    noLid: 'ל-Mac הזה אין מכסה, אז אין מה להשאיר ער כשהוא נסגר.',
     busy: 'רגע… (מחכה לאישור Touch ID / סיסמה)',
     headOn: (until: string, ac: boolean) => `● פעיל${until ? ` עד ${until}` : ''}${ac ? ' (רק על מטען)' : ''}`,
     headLeft: '⚠ נשאר דלוק בלי שמירה (Restart או קריסה)',
@@ -82,7 +84,7 @@ const script = ($: Engine, ...args: string[]) => ['/bin/zsh', '-f', `${$.plugin.
 async function refresh($: Engine): Promise<void> {
   try {
     const { exitCode, stdout } = await $.process.run(script($, 'state'), { timeoutMs: 10_000 })
-    const [state, sd, until, mode] = stdout.trim().split(/\s+/)
+    const [state, sd, until, mode, lidKind] = stdout.trim().split(/\s+/)
     if (exitCode !== 0 || (state !== 'on' && state !== 'off')) {
       await update($, lid, prev => ({ ...prev, known: true, failed: true }))
       return
@@ -91,6 +93,7 @@ async function refresh($: Engine): Promise<void> {
       ...prev,
       known: true,
       failed: false,
+      hasLid: lidKind !== 'nolid', // an older script prints no fifth field
       on: state === 'on',
       sleepDisabled: sd === '1',
       until: until && until !== '-' ? until : '',
@@ -103,7 +106,7 @@ async function refresh($: Engine): Promise<void> {
 
 async function toggle($: Engine, t: Strings): Promise<void> {
   const cur = await read($, lid)
-  if (cur.busy || cur.failed) return
+  if (cur.busy || cur.failed || !cur.hasLid) return
   const turnOn = !cur.on && !cur.sleepDisabled
   await update($, lid, prev => ({ ...prev, busy: true }))
   try {
@@ -142,7 +145,8 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'SessionMode' }, async ($, e, next) => {
     const below = await next(e)
     const l = await read($, lid)
-    if (!l.known || l.failed) return below
+    // nothing to show where the script cannot run, or on a Mac with no lid (iMac, Mac mini, Studio)
+    if (!l.known || l.failed || !l.hasLid) return below
     const { Box, Text, Button } = $.ui.resolve(e)
     const c = chip(t, l)
     return (
@@ -161,6 +165,7 @@ export const register: Register = (on, options) => {
     const l = await read($, lid)
     if (!l.known) return <Text dimColor>{rtl(t.checking)}</Text>
     if (l.failed) return <Text dimColor>{rtl(t.macOnly)}</Text>
+    if (!l.hasLid) return <Text dimColor>{rtl(t.noLid)}</Text>
     // on: green with the end time; off: dim; left on by a crash or restart (SleepDisabled=1, no loop): red, a press resets it
     const head = l.busy ? t.busy : l.on ? t.headOn(l.until, l.mode === 'ac') : l.sleepDisabled ? t.headLeft : t.headOff
     const color = l.busy ? undefined : l.on ? 'success' : l.sleepDisabled ? 'error' : undefined

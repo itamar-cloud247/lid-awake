@@ -6,6 +6,22 @@ Written so a long-running job keeps going while the laptop is in a bag: Claude D
 
 [עברית למטה](#עברית)
 
+## Install it by asking Claude
+
+Give Claude (Claude Code in the terminal, or the Code tab of the Claude desktop app) this repository's link and say:
+
+> Install the lid-awake mod from <this repository's link>
+
+Claude reads [Instructions for Claude](#instructions-for-claude) below, checks that your Mac fits, tells you what the mod does and asks before installing it. You do the one thing it must not do for you: approve each turn-on with Touch ID or your password.
+
+## Requirements
+
+* **A MacBook.** On a Mac with no lid (iMac, Mac mini, Mac Studio) the chip stays hidden and `on` refuses: there is nothing to keep awake when a lid closes.
+* **macOS with its own tools only:** `pmset`, `caffeinate`, `ioreg`, `notifyutil`, `osascript`, `/bin/zsh`. No Homebrew. Tested on macOS 27, Apple Silicon (M3 Max). Intel Macs and older macOS versions have the same tools but have not been tested.
+* **An admin account**, or an admin's name and password: each turn-on asks for admin rights.
+* **Not blocked by your IT.** A managed (MDM) Mac may block or flag `pmset disablesleep`, and EDR may flag `boot-reset` as persistence.
+* **For the mod:** Claude Code 2.1.309 or later (the mod API, early access), in the terminal or the desktop app's Code tab. The script works without it.
+
 ## Quick start
 
 ```bash
@@ -17,15 +33,23 @@ chmod +x lid-awake.sh
 ./lid-awake.sh status
 ```
 
-### As a Claude mod (one button)
+### As a Claude mod (one small chip)
 
-The repository is also a Claude Code plugin. It adds a **Lid closed** pane with one on/off button, and a `/lid-awake` command that reopens it. The pane shows on / off / until when, and turns red if `SleepDisabled` was left on by a restart or crash (a press resets it). It runs the bundled `lid-awake.sh` with `state`, `on --gui` and `off --gui`. You approve with Touch ID (when sudo has `pam_tid`) or macOS's password dialog. The mod itself runs nothing as root.
+The repository is also a Claude Code plugin. It puts a small chip beside the model picker, colored by state, and one click turns it on or off:
+
+| Chip | Meaning |
+|---|---|
+| `☾ Lid: sleep` (dim) | Off: closing the lid sleeps as usual. |
+| `☀ Awake until 06:13` (green) | On, until that time. |
+| `⚠ Sleep disabled` (red) | `SleepDisabled` was left on by a restart or crash. A click resets it. |
+
+`/lid-awake` opens a pane with the details. The mod runs the bundled `lid-awake.sh` (`state` every 30s, `on --gui` / `off --gui` on a click). You approve with Touch ID (when sudo has `pam_tid`) or macOS's password dialog. The mod itself runs nothing as root. The labels are in English or Hebrew: the `language` option (`en` or `he`).
 
 ```
 /plugin install lid-awake --marketplace <owner>/lid-awake
 ```
 
-From a shell: `claude plugin install lid-awake --marketplace <owner>/lid-awake`. In the Claude desktop app: click **+** next to the prompt box, then **Plugins**, **Add marketplace** with `<owner>/lid-awake`, then **Add plugin**.
+From a shell: `claude plugin install lid-awake --marketplace <owner>/lid-awake` (add `--config language=he` for Hebrew). In the Claude desktop app: click **+** next to the prompt box, then **Plugins**, **Add marketplace** with `<owner>/lid-awake`, then **Add plugin**. Then run `/reload-plugins`, or open a new session.
 
 Read the script before you run it with sudo. It is under 200 lines. Keep it where only you can write it: whatever is in the file runs as root the next time you type your password.
 
@@ -35,7 +59,7 @@ Read the script before you run it with sudo. It is under 200 lines. Keep it wher
 | `on --ac-only [--until-idle]` | No sudo. Holds only while plugged in. Unplugged + lid closed sleeps as usual. `--until-idle` lets go 10 min after Claude Desktop stops working. |
 | `on --gui` / `off --gui` | Same, but admin rights come from Touch ID (if sudo has `pam_tid`) or macOS's own password dialog instead of `sudo` in a terminal. What the mod's button runs. |
 | `off` | Stops the hold. If `SleepDisabled` is still 1 after 12s, resets it (sudo) and exits non-zero if that fails. |
-| `state` | One line for widgets: `on\|off <SleepDisabled 0\|1> <until HH:MM\|-> <full\|ac\|->`. |
+| `state` | One line for widgets: `on\|off <SleepDisabled 0\|1> <until HH:MM\|-> <full\|ac\|-> <lid\|nolid>`. |
 | `status` | Loop, root guard, `SleepDisabled`, power assertions, last log lines. Warns about a leftover `SleepDisabled=1`. |
 | `boot-reset install` / `uninstall` | Optional. A one-line root job that, at every boot, runs `pmset -a disablesleep 0` if lid-awake was the one that set it. See [Risks](#risks). |
 
@@ -121,6 +145,18 @@ Read these before you use it in a bag.
 * **While it holds, you cannot sleep the Mac by hand.** Run `off` first.
 * **`--gui` asks for your admin password in a dialog the script raises.** That is convenient, and it is also a habit attackers rely on. The dialog text is set by the script, so a modified copy could show the same text and run something else. Only type the password when you just clicked lid-awake yourself.
 
+## Instructions for Claude
+
+You are installing this mod for the person who gave you this repository's link. Take `<owner>/<repo>` from that link.
+
+1. **Check the Mac.** `uname -s` must print `Darwin`, and `ioreg -r -k AppleClamshellState -d 1 | grep -q AppleClamshellState` must succeed (a MacBook). Otherwise tell the person it does not fit (see [Requirements](#requirements)) and stop.
+2. **Tell them, and ask.** In a few lines: a chip beside the model picker keeps the Mac awake with the lid closed, on battery too, until they turn it off. It ends by itself at the end time (12h), at 15% battery, or on heavy heat. Each turn-on asks for admin rights (Touch ID or password). Mention the two main [Risks](#risks): an awake, locked Mac keeps its FileVault keys in memory, and heat in a closed bag. Ask which language they want (`en` or `he`) and whether to install. Install nothing without their yes.
+3. **Install.** `claude plugin install lid-awake --marketplace <owner>/<repo> --config language=<en|he>`. If `claude` is not on the PATH (as in some desktop app sessions), give them the steps instead: **+** next to the prompt box, **Plugins**, **Add marketplace** with `<owner>/<repo>`, **Add plugin** `lid-awake`, then `/plugin configure lid-awake@lid-awake` for the language.
+4. **Check it.** `claude plugin list` shows `lid-awake@lid-awake` enabled. Tell them to run `/reload-plugins` (or open a new session), and that the chip `☾ Lid: sleep` appears beside the model picker.
+5. **Do not** run `sudo`, `lid-awake.sh on`, `on --gui` or `boot-reset` for them, and do not edit `/etc/pam.d` or sudoers to add Touch ID. Turning it on is their click and their approval. Point them to `boot-reset` in [Risks](#risks) if they want a reset at every boot. That one they run themselves.
+
+To remove it: `claude plugin uninstall lid-awake@lid-awake`, then the [Uninstall](#uninstall) steps.
+
 ## Uninstall
 
 `./lid-awake.sh off`, `./lid-awake.sh boot-reset uninstall` (if installed), then delete the script, `~/Library/Application Support/lid-awake` and `~/Library/Logs/lid-awake.log`.
@@ -153,7 +189,14 @@ MIT. See [LICENSE](LICENSE).
 
 - `on --ac-only`: בלי sudo. מחזיק רק כשהמחשב מחובר לחשמל.
 - `--gui`: ‏Touch ID (אם הוגדר ל-sudo) או חלון הסיסמה של macOS, במקום sudo בטרמינל. זה מה שהכפתור מריץ.
-- **כמוד ל-Claude:** ה-repo הוא גם תוסף. הוא מוסיף חלונית "Lid closed" עם כפתור אחד ואת הפקודה `/lid-awake`. התקנה: `/plugin install lid-awake --marketplace <owner>/lid-awake`. המוד עצמו לא מריץ כלום כ-root.
+- **כמוד ל-Claude:** ה-repo הוא גם תוסף. הוא מוסיף תווית קטנה ליד בחירת המודל, וצבע התווית מראה את המצב: אפור כשכבוי, ירוק עם שעת הסיום כשפעיל, ואדום כשנשאר דלוק. לחיצה אחת מדליקה או מכבה, ו-`/lid-awake` פותח חלונית עם הפרטים. השפה נקבעת בהגדרה `language` (‏`en` או `he`). התקנה: `/plugin install lid-awake --marketplace <owner>/lid-awake`. המוד עצמו לא מריץ כלום כ-root.
+- **התקנה דרך Claude:** נותנים ל-Claude את הקישור ל-repo ואומרים לו: "תתקין לי את המוד lid-awake מהקישור הזה". הוא בודק שהמחשב מתאים, מסביר מה המוד עושה ושואל לפני שהוא מתקין. את האישור בכל הדלקה (Touch ID או סיסמה) נותנים בעצמכם.
+- **דרישות:**
+  - MacBook. במחשב בלי מכסה התווית מוסתרת.
+  - macOS. נבדק על macOS 27 ב-M3 Max. על Intel ועל גרסאות ישנות לא נבדק.
+  - הרשאות מנהל.
+  - מחשב שהארגון לא חוסם בו את `pmset disablesleep` (MDM).
+  - בשביל המוד: Claude Code בגרסה 2.1.309 ומעלה.
 - `state`: שורה אחת לווידג'ט.
 - `--until-idle`: משחרר 10 דקות אחרי ש-Claude Desktop מפסיק לעבוד.
 - `--hours` ו-`--min-batt`: מגבלת זמן ורצפת סוללה (10%–90%).

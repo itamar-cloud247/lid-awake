@@ -25,4 +25,6 @@ Needs a real run (sudo):
 - [ ] `sudo kill -9 <guard>` → loop exits, notification warns that SleepDisabled is still 1; `off --gui` clears it.
 - [ ] With `pam_tid` in `/etc/pam.d/sudo_local`: `on --gui` asks for Touch ID first; cancel → the password dialog appears (no hang). Same from a Terminal.
 - [ ] Mod: install from a local marketplace (`claude plugin marketplace add ~/Documents/lid-awake`, then install), open Claude Desktop → the "Lid closed" pane appears; Turn on → Touch ID/password → green "On until HH:MM"; Turn off → "Off"; `/lid-awake` reopens the pane.
+- [ ] Mac with no lid (iMac / Mac mini / Studio): `state` ends `nolid`, `on` refuses, no chip beside the model picker, the pane says there is no lid.
+- [ ] Install by link: in a fresh Claude session on another Mac, "Install the lid-awake mod from <link>" → Claude checks the Mac, explains, asks, installs with `--config language=…`, and runs no sudo.
 - [ ] `on --ac-only` (no sudo) on AC, lid closed 5 min → awake; unplug → sleeps.

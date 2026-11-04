@@ -35,6 +35,7 @@ log() { print -r -- "$(date '+%F %T') $*" >> "$LOG" }
 num() { [[ $1 == <-> ]] && print $1 || print $2 }
 on_ac() { pmset -g batt | head -1 | grep -q "AC Power" }
 batt() { num "$(pmset -g batt | grep InternalBattery | grep -oE '[0-9]+%' | head -1 | tr -d %)" 0 }   # not a UPS line
+has_lid() { ioreg -r -k AppleClamshellState -d 1 | grep -q '"AppleClamshellState"' }   # MacBooks only
 lid() { ioreg -r -k AppleClamshellState -d 1 | grep -q '"AppleClamshellState" = Yes' && print closed || print open }
 thermal() { num "$(notifyutil -g com.apple.system.thermalpressurelevel | awk '{print $2}')" 9 }   # 0 nominal, 1 moderate, 2 heavy+
 sleep_disabled() { pmset -g | grep -qE '^ *SleepDisabled[[:space:]]+1' }
@@ -111,11 +112,11 @@ case "${1:-}" in
     [[ -e $MARK ]] && print "marker $MARK: set (lid-awake set SleepDisabled=1)"
     [[ -f $BOOT_PLIST ]] && print "boot-reset: installed" || print "boot-reset: not installed"
     pmset -g assertions | grep -E 'caffeinate|Claude'; tail -5 "$LOG" 2>/dev/null; exit 0 ;;
-  state)   # one line: on|off <SleepDisabled 0|1> <until HH:MM|-> <full|ac|->
+  state)   # one line: on|off <SleepDisabled 0|1> <until HH:MM|-> <full|ac|-> <lid|nolid>
     if running; then
       e=0 a=0; [[ -f $INFO ]] && read -r e a < "$INFO"
-      print "on $(sleep_disabled && print 1 || print 0) $([[ $e == <1-> ]] && date -r $e '+%H:%M' || print -- -) $([[ $a == 1 ]] && print ac || print full)"
-    else print "off $(sleep_disabled && print 1 || print 0) - -"; fi
+      print "on $(sleep_disabled && print 1 || print 0) $([[ $e == <1-> ]] && date -r $e '+%H:%M' || print -- -) $([[ $a == 1 ]] && print ac || print full) $(has_lid && print lid || print nolid)"
+    else print "off $(sleep_disabled && print 1 || print 0) - - $(has_lid && print lid || print nolid)"; fi
     exit 0 ;;
   boot-reset)
     case "${2:-}" in
@@ -153,6 +154,7 @@ case "${1:-}" in
     # One `on` at a time: without this, two runs at once could both pass `running` and leave an orphan loop.
     mkdir "$STATE/on.lock" 2>/dev/null || { print "another '$ME on' is starting (or remove $STATE/on.lock)"; exit 1 }
     trap 'rmdir "$STATE/on.lock" 2>/dev/null' EXIT
+    has_lid || { print "this Mac has no lid: nothing to keep awake when it closes ('caffeinate -s' keeps a desktop Mac awake)"; exit 1 }
     running && { print "already running (pid $(<$PIDF)); '$ME off' first to change options"; exit 0 }
     # A SleepDisabled=1 left by a reboot or crash would keep the lid awake on battery with no guard watching it.
     sleep_disabled && { print "SleepDisabled=1 is left over from an earlier run; '$ME off' first"; exit 1 }

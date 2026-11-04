@@ -102,3 +102,17 @@ test('Hebrew with language: he', { options: { language: 'he' } }, async ($, on) 
   expect((await ui.find({ type: 'Text', text: /ער/ }))?.text).toContain('☀ ער עד 06:13')
   await ui.unmount()
 })
+
+test('no chip on a Mac with no lid, and a press does nothing', async ($, on) => {
+  const runs: string[][] = []
+  engine(on, 'off 0 - - nolid\n', runs)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const chip = await $.ui.mount({ plugin: 'lid-awake', surface: 'desktop', component: 'SessionMode', props: { modes: ['focus'] } })
+  expect(await chip.find({ type: 'Text', text: /Lid/ })).toBeFalsy()
+  expect((await chip.find({ type: 'Text', text: /focus/ }))?.text).toBe('focus')
+  await chip.unmount()
+  const pane = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  expect((await pane.find({ type: 'Text', text: /no lid/ }))?.text).toContain('no lid')
+  await pane.unmount()
+  expect(runs.some(a => a.at(-1) === '--gui')).toBe(false)
+})
