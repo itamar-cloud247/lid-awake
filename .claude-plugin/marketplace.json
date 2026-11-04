@@ -1,0 +1,5 @@
+{
+  "name": "lid-awake",
+  "owner": { "name": "<author>" },
+  "plugins": [{ "name": "lid-awake", "source": "./" }]
+}

@@ -29,6 +29,14 @@ Two passes over the original script (the one the field tests ran on): the author
 | G5 | Low | The hub version's `--gui` startup checked only `SleepDisabled`, and its `sudo` branch still ran `pmset` through the user's `PATH`. | Not in this draft (guard-alive check, fixed `PATH`). |
 | G6 | Low | The loop's exit notification said "will sleep now" even if the flag was still 1 (e.g. the guard was SIGKILLed). | Fixed: waits up to 15s for the flag to drop, otherwise warns to run `off`. |
 
+## The mod and Touch ID (added 04/11/2026)
+
+| # | Sev | Finding | Status |
+|---|---|---|---|
+| M1 | Info | The mod runs only `/bin/zsh -f <plugin root>/lid-awake.sh state|on --gui|off --gui` through `$.process.run` (an argv, no shell). It holds no secret and runs nothing as root. | Root still needs the person's Touch ID or password each time. |
+| M2 | Medium | The installed copy of the script sits in the user's plugin cache, which the user can write. Like #4, anything that can write there gets root the next time the person approves. | Inherent; documented. A plugin update replaces the file. |
+| T1 | Low | Touch ID path: `sudo` with no terminal. If Touch ID is cancelled, `pam_unix` falls back to a password prompt. From a Terminal (`--gui` typed by hand), sudo would wait on the tty with an empty prompt (`-p ''`). | Fixed with `-S` (any password is read from stdin, `/dev/null`), so a cancel fails at once and the password dialog follows. The hub copy uses `-p ''` without `-S`. |
+
 Pid reuse: the guard and `off` accept a pid only if its command line carries the loop marker, so the risk is negligible.
 
 Not done (design choices for later): running the guard from launchd instead of sudo; restoring a previous non-zero `SleepDisabled` (`on` refuses in that case instead).

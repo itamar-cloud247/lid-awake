@@ -1,0 +1,6 @@
+{
+  "name": "lid-awake",
+  "version": "0.1.0",
+  "description": "Keep a MacBook awake with the lid closed, on battery too: a 'Lid closed' pane with one on/off button, running the bundled lid-awake.sh",
+  "types": "./types/index.d.ts"
+}

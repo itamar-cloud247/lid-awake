@@ -6,6 +6,7 @@ Done without root (04/11/2026 draft):
 - [x] `zsh -n`. Bad options rejected (`--hours 99`, `--min-batt 'a[$(id)]'`).
 - [x] Loop started with junk arguments → end=0, min_batt=100, ac_only=1 → exits "cap reached" at once. No command substitution ran.
 - [x] `as_root` guard command (stubbed guard) under `/bin/sh -c` (as `do shell script` runs it) and `zsh -f -c`: returns at once, guard ppid 1, marker set, removed on TERM.
+- [x] Mod: `claude plugin validate` passes (only an icon warning); `claude plugin test` 8/8 on desktop and terminal (on, left on, a press runs `on --gui` on the bundled script, no answer = macOS only); `tsc` strict clean.
 - [x] Guard snippet with `pmset`/`logger` stubbed: bad pid refuses to start. Junk min/end → ends at once ("cap"). End beyond 72h clamped. Loop killed → "loop gone". USR1 → reset ("signal"). HUP and TSTP ignored (state `S`, not `T`). TERM → reset.
 
 Needs a real run (sudo):
@@ -22,4 +23,6 @@ Needs a real run (sudo):
 - [ ] `on --gui`: macOS dialog appears with the English prompt; Cancel → "no admin rights … stopped", nothing left running. OK → guard running with ppid 1 and **`ps -o ruid= -p <guard>` = 0**; `state` prints `on 1 HH:MM full`.
 - [ ] Leave the `--gui` dialog open 2 min, then OK → hold starts (loop waits up to 180s).
 - [ ] `sudo kill -9 <guard>` → loop exits, notification warns that SleepDisabled is still 1; `off --gui` clears it.
+- [ ] With `pam_tid` in `/etc/pam.d/sudo_local`: `on --gui` asks for Touch ID first; cancel → the password dialog appears (no hang). Same from a Terminal.
+- [ ] Mod: install from a local marketplace (`claude plugin marketplace add ~/Documents/lid-awake`, then install), open Claude Desktop → the "Lid closed" pane appears; Turn on → Touch ID/password → green "On until HH:MM"; Turn off → "Off"; `/lid-awake` reopens the pane.
 - [ ] `on --ac-only` (no sudo) on AC, lid closed 5 min → awake; unplug → sleeps.

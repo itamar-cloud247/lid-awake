@@ -17,13 +17,23 @@ chmod +x lid-awake.sh
 ./lid-awake.sh status
 ```
 
+### As a Claude mod (one button)
+
+The repository is also a Claude Code plugin. It adds a **Lid closed** pane with one on/off button, and a `/lid-awake` command that reopens it. The pane shows on / off / until when, and turns red if `SleepDisabled` was left on by a restart or crash (a press resets it). It runs the bundled `lid-awake.sh` with `state`, `on --gui` and `off --gui`. You approve with Touch ID (when sudo has `pam_tid`) or macOS's password dialog. The mod itself runs nothing as root.
+
+```
+/plugin install lid-awake --marketplace <owner>/lid-awake
+```
+
+From a shell: `claude plugin install lid-awake --marketplace <owner>/lid-awake`. In the Claude desktop app: click **+** next to the prompt box, then **Plugins**, **Add marketplace** with `<owner>/lid-awake`, then **Add plugin**.
+
 Read the script before you run it with sudo. It is under 200 lines. Keep it where only you can write it: whatever is in the file runs as root the next time you type your password.
 
 | Command | What it does |
 |---|---|
 | `on [--hours 1-72] [--min-batt 10-90]` | AC and battery. Needs sudo once. Defaults: 12h, 15%. |
 | `on --ac-only [--until-idle]` | No sudo. Holds only while plugged in. Unplugged + lid closed sleeps as usual. `--until-idle` lets go 10 min after Claude Desktop stops working. |
-| `on --gui` / `off --gui` | Same, but admin rights come from macOS's own password dialog instead of `sudo` in a terminal. For a menu-bar button or a launcher. |
+| `on --gui` / `off --gui` | Same, but admin rights come from Touch ID (if sudo has `pam_tid`) or macOS's own password dialog instead of `sudo` in a terminal. What the mod's button runs. |
 | `off` | Stops the hold. If `SleepDisabled` is still 1 after 12s, resets it (sudo) and exits non-zero if that fails. |
 | `state` | One line for widgets: `on\|off <SleepDisabled 0\|1> <until HH:MM\|-> <full\|ac\|->`. |
 | `status` | Loop, root guard, `SleepDisabled`, power assertions, last log lines. Warns about a leftover `SleepDisabled=1`. |
@@ -142,7 +152,8 @@ MIT. See [LICENSE](LICENSE).
 </div>
 
 - `on --ac-only`: בלי sudo. מחזיק רק כשהמחשב מחובר לחשמל.
-- `--gui`: חלון הסיסמה של macOS במקום sudo בטרמינל, לכפתור או למשגר.
+- `--gui`: ‏Touch ID (אם הוגדר ל-sudo) או חלון הסיסמה של macOS, במקום sudo בטרמינל. זה מה שהכפתור מריץ.
+- **כמוד ל-Claude:** ה-repo הוא גם תוסף. הוא מוסיף חלונית "Lid closed" עם כפתור אחד ואת הפקודה `/lid-awake`. התקנה: `/plugin install lid-awake --marketplace <owner>/lid-awake`. המוד עצמו לא מריץ כלום כ-root.
 - `state`: שורה אחת לווידג'ט.
 - `--until-idle`: משחרר 10 דקות אחרי ש-Claude Desktop מפסיק לעבוד.
 - `--hours` ו-`--min-batt`: מגבלת זמן ורצפת סוללה (10%–90%).

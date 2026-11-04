@@ -43,8 +43,13 @@ notify() { osascript -e 'on run argv' -e 'display notification (item 1 of argv) 
 # Runs a fixed shell command line as root: sudo (after `sudo -v`), or with --gui macOS's administrator dialog
 # (`do shell script`, which itself uses a fixed PATH). The command and the prompt reach AppleScript as arguments, never
 # spliced into its source.
+# With Touch ID for sudo (pam_tid in /etc/pam.d/sudo_local, set by the Mac's admin) --gui asks for a finger first.
+# -S reads any password from stdin (/dev/null) rather than the terminal, so a cancelled Touch ID fails at once instead
+# of waiting at an empty prompt; then the password dialog.
+tid_sudo() { grep -qE '^[[:space:]]*auth[[:space:]]+sufficient[[:space:]]+pam_tid\.so' /etc/pam.d/sudo_local 2>/dev/null }
 as_root() {
   if (( GUI )); then
+    tid_sudo && /usr/bin/sudo -S -p '' /bin/zsh -f -c "$1" </dev/null >/dev/null 2>&1 && return 0
     osascript - "$1" "lid-awake wants to keep this Mac awake with the lid closed, on battery too." >/dev/null 2>&1 <<'OSA'
 on run argv
   do shell script (item 1 of argv) with administrator privileges with prompt (item 2 of argv)
