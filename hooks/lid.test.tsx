@@ -27,6 +27,11 @@ function engine(on: Parameters<TestBody>[1], answer: string, runs: string[][] = 
     return { value: { exitCode: isState ? code : 0, stdout: isState ? answer : '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
   })
   on('session.start', (_, e) => ({ cwd: e.cwd }))
+  // the engine's own mode labels beneath the chip
+  on('ui.render', { component: 'SessionMode' }, ($, e) => {
+    const { Text } = $.ui.resolve(e)
+    return <Text dimColor>{e.props.modes.join(' & ')}</Text>
+  })
 }
 
 for (const surface of ['desktop', 'terminal'] as const) {
@@ -55,6 +60,27 @@ for (const surface of ['desktop', 'terminal'] as const) {
     await ui.press({ key: 'lid-toggle' })
     const run = runs.find(a => a.at(-2) === 'on' && a.at(-1) === '--gui')
     expect(run?.[2]).toMatch(/\/lid-awake\.sh$/)
+    await ui.unmount()
+  })
+
+  test(`${surface}: chip when on is green with the end time, engine labels kept`, async ($, on) => {
+    const runs: string[][] = []
+    engine(on, 'on 1 06:13 full\n', runs)
+    await $.session.start({ cwd: '/', surface, isInteractive: true })
+    const up = await $.ui.mount({ plugin: 'lid-awake', surface, component: 'SessionMode', props: { modes: ['focus'] } })
+    expect((await up.find({ type: 'Text', text: /Awake/ }))?.text).toContain('☀ Awake until 06:13')
+    expect((await up.find({ type: 'Text', text: /focus/ }))?.text).toBe('focus')
+    await up.unmount()
+  })
+
+  test(`${surface}: chip when off, and a click`, async ($, on) => {
+    const runs: string[][] = []
+    engine(on, 'off 0 - -\n', runs)
+    await $.session.start({ cwd: '/', surface, isInteractive: true })
+    const ui = await $.ui.mount({ plugin: 'lid-awake', surface, component: 'SessionMode', props: { modes: [] } })
+    expect((await ui.find({ type: 'Text', text: /Lid/ }))?.text).toContain('☾ Lid: sleep')
+    await ui.press({ key: 'lid-chip' })
+    expect(runs.some(a => a.at(-2) === 'on' && a.at(-1) === '--gui')).toBe(true)
     await ui.unmount()
   })
 

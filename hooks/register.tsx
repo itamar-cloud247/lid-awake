@@ -3,13 +3,22 @@ import type { EngineInterface as Engine, Register } from 'claude-code'
 
 import type { LidState } from '../types'
 
-// A "Lid closed" pane with one button. It runs the lid-awake.sh that ships beside this mod: `state` every 30 s, and
+// A small chip beside the model picker (its color says the state, a click turns it on or off) and a "Lid closed"
+// pane with the details (`/lid-awake`). Both run the lid-awake.sh that ships beside this mod: `state` every 30 s, and
 // `on --gui` / `off --gui` on a press. The mod itself runs nothing as root: the admin step is the script's, through
 // Touch ID for sudo (when the Mac has pam_tid) or macOS's own password dialog.
 const PANE = 'lid-awake'
 const TITLE = 'Lid closed'
 const OFF: LidState = { known: false, failed: false, on: false, sleepDisabled: false, until: '', mode: '', busy: false }
 const lid = atom({ plugin: 'lid-awake', key: 'lid' } as const, OFF)
+
+// The chip: off dim, on green with the end time, left on by a restart or crash red (a click resets it).
+function chip(l: LidState): { text: string; color?: string } {
+  if (l.busy) return { text: '◌ Lid…' }
+  if (l.on) return { text: `☀ Awake${l.until ? ` until ${l.until}` : ''}${l.mode === 'ac' ? ' (AC)' : ''}`, color: 'success' }
+  if (l.sleepDisabled) return { text: '⚠ Sleep disabled', color: 'error' }
+  return { text: '☾ Lid: sleep' }
+}
 
 const script = ($: Engine, ...args: string[]) => ['/bin/zsh', '-f', `${$.plugin.root}/lid-awake.sh`, ...args]
 
@@ -63,7 +72,6 @@ async function toggle($: Engine): Promise<void> {
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'lid-awake', description: 'Open the "Lid closed" pane (keep the Mac awake with the lid closed)' })
-    void $.ui.open({ id: PANE, title: TITLE })
     // it can also be switched from a terminal or end by itself (cap, low battery, heat), so poll it
     void refresh($)
     $.clock.every(30_000, () => void refresh($))
@@ -74,6 +82,23 @@ export const register: Register = on => {
     await refresh($)
     await $.ui.open({ id: PANE, title: TITLE })
     return { text: 'The "Lid closed" pane is open.' }
+  })
+
+  // The chip beside the model picker, before the engine's own mode labels (kept as they are).
+  on('ui.render', { component: 'SessionMode' }, async ($, e, next) => {
+    const below = await next(e)
+    const l = await read($, lid)
+    if (!l.known || l.failed) return below
+    const { Box, Text, Button } = $.ui.resolve(e)
+    const c = chip(l)
+    return (
+      <Box flexDirection="row" gap={1}>
+        <Button key="lid-chip" plain onPress={() => void toggle($)}>
+          <Text color={c.color} dimColor={!c.color}>{c.text}</Text>
+        </Button>
+        {below}
+      </Box>
+    )
   })
 
   // State, what ends it, one button.
