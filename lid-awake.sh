@@ -1,7 +1,7 @@
 #!/bin/zsh -f
 # lid-awake: keep a MacBook awake with the lid closed, on AC or battery, until you turn it off.
 #   ./lid-awake.sh on                      # asks the sudo password once, holds until `off` (cap 12h)
-#   ./lid-awake.sh on --hours 4 --min-batt 20
+#   ./lid-awake.sh on --hours 4 --min-batt 20    # --hours in half hours: 0.5 to 72 (1.5 = an hour and a half)
 #   ./lid-awake.sh on --ac-only            # no sudo: AC only; unplugged + lid closed sleeps as usual
 #   ./lid-awake.sh on --ac-only --until-idle   # ...and let go 10 min after Claude Desktop stops working
 #   ./lid-awake.sh off | status | state     # state: one line for a menu-bar/status widget
@@ -25,7 +25,7 @@ BOOT_LABEL=local.lid-awake.boot-reset
 BOOT_PLIST=/Library/LaunchDaemons/$BOOT_LABEL.plist
 MARK=/var/db/lid-awake.active        # root-only: the guard creates it with disablesleep 1 and removes it with 0
 RESET="/usr/bin/pmset -a disablesleep 0; /bin/rm -f $MARK"
-HOURS=12 MIN_BATT=15 ACONLY=0 UNTIL_IDLE=0 GRACE=10 GUI=0
+MINUTES=720 MIN_BATT=15 ACONLY=0 UNTIL_IDLE=0 GRACE=10 GUI=0
 mkdir -p "$STATE" "${LOG:h}"
 
 running() { [[ -f $PIDF && $(<$PIDF) == <-> ]] && ps -p "$(<$PIDF)" -o command= 2>/dev/null | grep -qF -- " $TAG " }
@@ -144,7 +144,10 @@ case "${1:-}" in
   on|start|"")
     (( $# )) && shift
     while (( $# )); do case $1 in
-      --hours)    [[ ${2:-} == <1-72> ]] || { print -r -- "--hours: 1-72"; exit 2 }; HOURS=$2; shift ;;
+      --hours)    # whole or half hours (4, 1.5, 0.5), turned into minutes here so (( )) only ever sees digits
+                  [[ ${2:-} == (<0-72>|<0-72>.0|<0-71>.5) ]] || { print -r -- "--hours: 0.5 to 72, in half hours (1.5 = an hour and a half)"; exit 2 }
+                  MINUTES=$(( ${2%%.*} * 60 )); [[ $2 == *.5 ]] && (( MINUTES += 30 ))
+                  (( MINUTES >= 30 && MINUTES <= 4320 )) || { print -r -- "--hours: 0.5 to 72"; exit 2 }; shift ;;
       --min-batt) [[ ${2:-} == <10-90> ]] || { print -r -- "--min-batt: 10-90"; exit 2 }; MIN_BATT=$2; shift ;;
       --ac-only)  ACONLY=1 ;;
       --until-idle) UNTIL_IDLE=1 ;;
@@ -159,7 +162,7 @@ case "${1:-}" in
     # A SleepDisabled=1 left by a reboot or crash would keep the lid awake on battery with no guard watching it.
     sleep_disabled && { print "SleepDisabled=1 is left over from an earlier run; '$ME off' first"; exit 1 }
     (( ACONLY || GUI )) || { print "sudo is needed once, for pmset disablesleep (battery + closed lid):"; /usr/bin/sudo -v || exit 1 }
-    end=$(( $(date +%s) + HOURS * 3600 ))
+    end=$(( $(date +%s) + MINUTES * 60 ))
     nohup /bin/zsh -f "$SELF" $TAG $end $MIN_BATT $ACONLY $UNTIL_IDLE >/dev/null 2>&1 &
     lpid=$!; print $lpid > "$PIDF"   # nohup execs zsh, so this is the loop's own pid
     if (( ! ACONLY )); then

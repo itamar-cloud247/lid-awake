@@ -143,5 +143,20 @@ test('pane: a quick duration, a custom one, and a bad one', async ($, on) => {
   expect(onArgs(runs)).toBeUndefined()
   await ui.input({ key: 'lid-hours', text: '6' })
   expect(onArgs(runs)).toEqual(['on', '--gui', '--hours', '6'])
+  runs.length = 0
+  await ui.input({ key: 'lid-hours', text: '1.25' })
+  expect(onArgs(runs)).toBeUndefined()
+  await ui.input({ key: 'lid-hours', text: '1.5' })
+  expect(onArgs(runs)).toEqual(['on', '--gui', '--hours', '1.5'])
+  await ui.unmount()
+})
+
+test('the hours option takes half hours', { options: { hours: 0.5 } }, async ($, on) => {
+  const runs: string[][] = []
+  engine(on, 'off 0 - - lid\n', runs)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'lid-awake', surface: 'desktop', component: 'SessionMode', props: { modes: [] } })
+  await ui.press({ key: 'lid-chip' })
+  expect(onArgs(runs)).toEqual(['on', '--gui', '--hours', '0.5'])
   await ui.unmount()
 })

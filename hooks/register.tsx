@@ -43,8 +43,8 @@ const TEXT = {
     turnOn: 'Turn on',
     forHow: 'For how long?',
     hoursShort: (h: number) => `${h}h`,
-    custom: 'Other (hours, 1–72)',
-    badHours: 'Hours: a whole number from 1 to 72',
+    custom: 'Other (hours, 0.5–72; 1.5 = an hour and a half)',
+    badHours: 'Hours: 0.5 to 72, in half hours (1.5 = an hour and a half)',
     chipDefault: (h: number) => `A click on the chip beside the model picker turns it on for ${h}h (the hours option).`,
   },
   he: {
@@ -74,8 +74,8 @@ const TEXT = {
     turnOn: 'להפעיל',
     forHow: 'לכמה זמן?',
     hoursShort: (h: number) => `${h} ש'`,
-    custom: 'אחר (שעות, 1–72)',
-    badHours: 'שעות: מספר שלם מ-1 עד 72',
+    custom: 'אחר (שעות, 0.5–72; 1.5 = שעה וחצי)',
+    badHours: 'שעות: 0.5 עד 72, בחצאי שעה (1.5 = שעה וחצי)',
     chipDefault: (h: number) => `לחיצה על התווית ליד בחירת המודל מפעילה ל-${h} שעות (ההגדרה hours).`,
   },
 }
@@ -90,10 +90,11 @@ function chip(t: Strings, l: LidState): { text: string; color?: string } {
 }
 
 const DURATIONS = [1, 2, 4, 8, 12, 24]
-// Hours from the `hours` option or a typed value: a whole number 1-72, as lid-awake.sh accepts; anything else is not one.
+// Hours from the `hours` option or a typed value: whole or half hours from 0.5 to 72 (1.5 = an hour and a half), as
+// lid-awake.sh accepts; anything else is not one.
 function asHours(v: unknown): number | undefined {
-  const h = typeof v === 'number' ? v : typeof v === 'string' && /^\s*\d+\s*$/.test(v) ? Number(v) : NaN
-  return Number.isInteger(h) && h >= 1 && h <= 72 ? h : undefined
+  const h = typeof v === 'number' ? v : typeof v === 'string' && /^\s*\d+(\.[05])?\s*$/.test(v) ? Number(v) : NaN
+  return Number.isInteger(h * 2) && h >= 0.5 && h <= 72 ? h : undefined
 }
 
 const script = ($: Engine, args: readonly string[]) => ['/bin/zsh', '-f', `${$.plugin.root}/lid-awake.sh`, ...args]
