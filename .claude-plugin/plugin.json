@@ -1,6 +1,18 @@
 {
   "name": "lid-awake",
-  "version": "0.1.0",
-  "description": "Keep a MacBook awake with the lid closed, on battery too: a 'Lid closed' pane with one on/off button, running the bundled lid-awake.sh",
-  "types": "./types/index.d.ts"
+  "version": "0.2.0",
+  "description": "Keep a MacBook awake with the lid closed, on battery too: a small colored chip beside the model picker (one click on/off) and a details pane, running the bundled lid-awake.sh. English or Hebrew labels.",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "language": {
+      "type": "string",
+      "title": "Interface language",
+      "description": "The chip, pane and messages: en (English) or he (Hebrew).",
+      "default": "en",
+      "options": [
+        "en",
+        "he"
+      ]
+    }
+  }
 }

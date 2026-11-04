@@ -94,3 +94,11 @@ for (const surface of ['desktop', 'terminal'] as const) {
     await ui.unmount()
   })
 }
+
+test('Hebrew with language: he', { options: { language: 'he' } }, async ($, on) => {
+  engine(on, 'on 1 06:13 full\n')
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'lid-awake', surface: 'desktop', component: 'SessionMode', props: { modes: [] } })
+  expect((await ui.find({ type: 'Text', text: /ער/ }))?.text).toContain('☀ ער עד 06:13')
+  await ui.unmount()
+})

@@ -6,18 +6,75 @@ import type { LidState } from '../types'
 // A small chip beside the model picker (its color says the state, a click turns it on or off) and a "Lid closed"
 // pane with the details (`/lid-awake`). Both run the lid-awake.sh that ships beside this mod: `state` every 30 s, and
 // `on --gui` / `off --gui` on a press. The mod itself runs nothing as root: the admin step is the script's, through
-// Touch ID for sudo (when the Mac has pam_tid) or macOS's own password dialog.
+// Touch ID for sudo (when the Mac has pam_tid) or macOS's own password dialog. Labels in English or Hebrew: the
+// `language` option.
 const PANE = 'lid-awake'
-const TITLE = 'Lid closed'
 const OFF: LidState = { known: false, failed: false, on: false, sleepDisabled: false, until: '', mode: '', busy: false }
 const lid = atom({ plugin: 'lid-awake', key: 'lid' } as const, OFF)
 
+const RTL_START = '‏‫' // RLM + right-to-left embedding
+const RTL_END = '‬'
+
+const TEXT = {
+  en: {
+    title: 'Lid closed',
+    command: 'Open the "Lid closed" pane (keep the Mac awake with the lid closed)',
+    opened: 'The "Lid closed" pane is open.',
+    chipBusy: '◌ Lid…',
+    chipOn: (until: string, ac: boolean) => `☀ Awake${until ? ` until ${until}` : ''}${ac ? ' (AC)' : ''}`,
+    chipLeft: '⚠ Sleep disabled',
+    chipOff: '☾ Lid: sleep',
+    turnedOn: 'Lid closed: on. The Mac stays awake until you turn it off, on battery too.',
+    notOn: 'Not turned on (approval cancelled?)',
+    offReset: 'Lid closed: off (SleepDisabled reset to 0)',
+    off: 'Lid closed: off. Closing the lid sleeps as usual.',
+    noAnswer: 'lid-awake.sh did not answer',
+    checking: 'Checking lid-awake…',
+    macOnly: 'lid-awake.sh did not answer. It runs on macOS only.',
+    busy: 'One moment… (waiting for Touch ID / password)',
+    headOn: (until: string, ac: boolean) => `● On${until ? ` until ${until}` : ''}${ac ? ' (on AC only)' : ''}`,
+    headLeft: '⚠ Left on with nothing watching it (restart or crash)',
+    headOff: '○ Off',
+    whenOn: 'Closing the lid does not sleep the Mac, on battery too. It ends by itself at the end time, at 15% battery or on heavy heat.',
+    whenOff: 'When on, you can close the lid and Claude keeps working (internet and VPN stay up). Approve with Touch ID or your password.',
+    wait: 'One moment…',
+    turnOff: 'Turn off',
+    turnOn: 'Turn on',
+  },
+  he: {
+    title: 'מכסה סגור',
+    command: 'פותח את החלונית "מכסה סגור" (Mac ער עם מכסה סגור)',
+    opened: 'החלונית "מכסה סגור" נפתחה',
+    chipBusy: '◌ רגע…',
+    chipOn: (until: string, ac: boolean) => `☀ ער${until ? ` עד ${until}` : ''}${ac ? ' (מטען)' : ''}`,
+    chipLeft: '⚠ שינה כבויה',
+    chipOff: '☾ מכסה: ישן',
+    turnedOn: 'מכסה סגור: פעיל. ה-Mac יישאר ער עד שתכבה, גם על סוללה',
+    notOn: 'לא הופעל (האישור בוטל?)',
+    offReset: 'מכסה סגור: כבוי (SleepDisabled הוחזר ל-0)',
+    off: 'מכסה סגור: כבוי. סגירת מכסה תרדים כרגיל',
+    noAnswer: 'lid-awake.sh לא הגיב',
+    checking: 'בודק את lid-awake…',
+    macOnly: 'lid-awake.sh לא הגיב. הוא רץ רק ב-macOS.',
+    busy: 'רגע… (מחכה לאישור Touch ID / סיסמה)',
+    headOn: (until: string, ac: boolean) => `● פעיל${until ? ` עד ${until}` : ''}${ac ? ' (רק על מטען)' : ''}`,
+    headLeft: '⚠ נשאר דלוק בלי שמירה (Restart או קריסה)',
+    headOff: '○ כבוי',
+    whenOn: 'סגירת מכסה לא מרדימה את ה-Mac, גם על סוללה. נכבה לבד בשעת הסיום, ב-15% סוללה או בחום כבד.',
+    whenOff: 'כשפעיל, אפשר לסגור את המכסה ו-Claude ממשיך לעבוד (אינטרנט ו-VPN נשארים). אישור ב-Touch ID או בסיסמה.',
+    wait: 'רגע…',
+    turnOff: 'לכבות',
+    turnOn: 'להפעיל',
+  },
+}
+type Strings = (typeof TEXT)['en']
+
 // The chip: off dim, on green with the end time, left on by a restart or crash red (a click resets it).
-function chip(l: LidState): { text: string; color?: string } {
-  if (l.busy) return { text: '◌ Lid…' }
-  if (l.on) return { text: `☀ Awake${l.until ? ` until ${l.until}` : ''}${l.mode === 'ac' ? ' (AC)' : ''}`, color: 'success' }
-  if (l.sleepDisabled) return { text: '⚠ Sleep disabled', color: 'error' }
-  return { text: '☾ Lid: sleep' }
+function chip(t: Strings, l: LidState): { text: string; color?: string } {
+  if (l.busy) return { text: t.chipBusy }
+  if (l.on) return { text: t.chipOn(l.until, l.mode === 'ac'), color: 'success' }
+  if (l.sleepDisabled) return { text: t.chipLeft, color: 'error' }
+  return { text: t.chipOff }
 }
 
 const script = ($: Engine, ...args: string[]) => ['/bin/zsh', '-f', `${$.plugin.root}/lid-awake.sh`, ...args]
@@ -44,7 +101,7 @@ async function refresh($: Engine): Promise<void> {
   }
 }
 
-async function toggle($: Engine): Promise<void> {
+async function toggle($: Engine, t: Strings): Promise<void> {
   const cur = await read($, lid)
   if (cur.busy || cur.failed) return
   const turnOn = !cur.on && !cur.sleepDisabled
@@ -52,26 +109,23 @@ async function toggle($: Engine): Promise<void> {
   try {
     // Touch ID or the password dialog waits for the person, so allow two minutes
     const { exitCode, stdout } = await $.process.run(script($, turnOn ? 'on' : 'off', '--gui'), { timeoutMs: 120_000 })
-    if (turnOn) {
-      $.ui.toast(exitCode === 0
-        ? 'Lid closed: on. The Mac stays awake until you turn it off, on battery too.'
-        : 'Not turned on (approval cancelled?)')
-    } else {
-      $.ui.toast(/still 1/.test(stdout)
-        ? 'Lid closed: off (SleepDisabled reset to 0)'
-        : 'Lid closed: off. Closing the lid sleeps as usual.')
-    }
+    if (turnOn) $.ui.toast(exitCode === 0 ? t.turnedOn : t.notOn)
+    else $.ui.toast(/still 1/.test(stdout) ? t.offReset : t.off)
   } catch {
-    $.ui.toast('lid-awake.sh did not answer')
+    $.ui.toast(t.noAnswer)
   } finally {
     await update($, lid, prev => ({ ...prev, busy: false }))
     await refresh($)
   }
 }
 
-export const register: Register = on => {
+export const register: Register = (on, options) => {
+  const isHe = options.language === 'he'
+  const t: Strings = isHe ? TEXT.he : TEXT.en
+  const rtl = (s: string) => (isHe ? `${RTL_START}${s}${RTL_END}` : s)
+
   on('session.start', async ($, e, next) => {
-    await $.command.register({ name: 'lid-awake', description: 'Open the "Lid closed" pane (keep the Mac awake with the lid closed)' })
+    await $.command.register({ name: 'lid-awake', description: t.command })
     // it can also be switched from a terminal or end by itself (cap, low battery, heat), so poll it
     void refresh($)
     $.clock.every(30_000, () => void refresh($))
@@ -80,8 +134,8 @@ export const register: Register = on => {
 
   on('command.run', { command: 'lid-awake' }, async $ => {
     await refresh($)
-    await $.ui.open({ id: PANE, title: TITLE })
-    return { text: 'The "Lid closed" pane is open.' }
+    await $.ui.open({ id: PANE, title: t.title })
+    return { text: t.opened }
   })
 
   // The chip beside the model picker, before the engine's own mode labels (kept as they are).
@@ -90,11 +144,11 @@ export const register: Register = on => {
     const l = await read($, lid)
     if (!l.known || l.failed) return below
     const { Box, Text, Button } = $.ui.resolve(e)
-    const c = chip(l)
+    const c = chip(t, l)
     return (
       <Box flexDirection="row" gap={1}>
-        <Button key="lid-chip" plain onPress={() => void toggle($)}>
-          <Text color={c.color} dimColor={!c.color}>{c.text}</Text>
+        <Button key="lid-chip" plain onPress={() => void toggle($, t)}>
+          <Text color={c.color} dimColor={!c.color}>{rtl(c.text)}</Text>
         </Button>
         {below}
       </Box>
@@ -105,28 +159,18 @@ export const register: Register = on => {
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button } = $.ui.resolve(e)
     const l = await read($, lid)
-    if (!l.known) return <Text dimColor>Checking lid-awake…</Text>
-    if (l.failed) return <Text dimColor>lid-awake.sh did not answer. It runs on macOS only.</Text>
+    if (!l.known) return <Text dimColor>{rtl(t.checking)}</Text>
+    if (l.failed) return <Text dimColor>{rtl(t.macOnly)}</Text>
     // on: green with the end time; off: dim; left on by a crash or restart (SleepDisabled=1, no loop): red, a press resets it
-    const head = l.busy
-      ? 'One moment… (waiting for Touch ID / password)'
-      : l.on
-        ? `● On${l.until ? ` until ${l.until}` : ''}${l.mode === 'ac' ? ' (on AC only)' : ''}`
-        : l.sleepDisabled
-          ? '⚠ Left on with nothing watching it (restart or crash)'
-          : '○ Off'
+    const head = l.busy ? t.busy : l.on ? t.headOn(l.until, l.mode === 'ac') : l.sleepDisabled ? t.headLeft : t.headOff
     const color = l.busy ? undefined : l.on ? 'success' : l.sleepDisabled ? 'error' : undefined
     return (
       <Box flexDirection="column" gap={1}>
-        <Text color={color} weight="semibold">{head}</Text>
-        <Text dimColor>
-          {l.on || l.sleepDisabled
-            ? 'Closing the lid does not sleep the Mac, on battery too. It ends by itself at the end time, at 15% battery or on heavy heat.'
-            : 'When on, you can close the lid and Claude keeps working (internet and VPN stay up). Approve with Touch ID or your password.'}
-        </Text>
-        <Box flexDirection="row">
-          <Button key="lid-toggle" variant={l.on ? 'secondary' : 'primary'} onPress={() => void toggle($)}>
-            {l.busy ? 'One moment…' : l.on || l.sleepDisabled ? 'Turn off' : 'Turn on'}
+        <Text color={color} weight="semibold">{rtl(head)}</Text>
+        <Text dimColor>{rtl(l.on || l.sleepDisabled ? t.whenOn : t.whenOff)}</Text>
+        <Box flexDirection={isHe ? 'row-reverse' : 'row'}>
+          <Button key="lid-toggle" variant={l.on ? 'secondary' : 'primary'} onPress={() => void toggle($, t)}>
+            {rtl(l.busy ? t.wait : l.on || l.sleepDisabled ? t.turnOff : t.turnOn)}
           </Button>
         </Box>
       </Box>
