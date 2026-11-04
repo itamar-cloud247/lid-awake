@@ -41,6 +41,11 @@ const TEXT = {
     wait: 'One moment…',
     turnOff: 'Turn off',
     turnOn: 'Turn on',
+    forHow: 'For how long?',
+    hoursShort: (h: number) => `${h}h`,
+    custom: 'Other (hours, 1–72)',
+    badHours: 'Hours: a whole number from 1 to 72',
+    chipDefault: (h: number) => `A click on the chip beside the model picker turns it on for ${h}h (the hours option).`,
   },
   he: {
     title: 'מכסה סגור',
@@ -67,6 +72,11 @@ const TEXT = {
     wait: 'רגע…',
     turnOff: 'לכבות',
     turnOn: 'להפעיל',
+    forHow: 'לכמה זמן?',
+    hoursShort: (h: number) => `${h} ש'`,
+    custom: 'אחר (שעות, 1–72)',
+    badHours: 'שעות: מספר שלם מ-1 עד 72',
+    chipDefault: (h: number) => `לחיצה על התווית ליד בחירת המודל מפעילה ל-${h} שעות (ההגדרה hours).`,
   },
 }
 type Strings = (typeof TEXT)['en']
@@ -79,11 +89,18 @@ function chip(t: Strings, l: LidState): { text: string; color?: string } {
   return { text: t.chipOff }
 }
 
-const script = ($: Engine, ...args: string[]) => ['/bin/zsh', '-f', `${$.plugin.root}/lid-awake.sh`, ...args]
+const DURATIONS = [1, 2, 4, 8, 12, 24]
+// Hours from the `hours` option or a typed value: a whole number 1-72, as lid-awake.sh accepts; anything else is not one.
+function asHours(v: unknown): number | undefined {
+  const h = typeof v === 'number' ? v : typeof v === 'string' && /^\s*\d+\s*$/.test(v) ? Number(v) : NaN
+  return Number.isInteger(h) && h >= 1 && h <= 72 ? h : undefined
+}
+
+const script = ($: Engine, args: readonly string[]) => ['/bin/zsh', '-f', `${$.plugin.root}/lid-awake.sh`, ...args]
 
 async function refresh($: Engine): Promise<void> {
   try {
-    const { exitCode, stdout } = await $.process.run(script($, 'state'), { timeoutMs: 10_000 })
+    const { exitCode, stdout } = await $.process.run(script($, ['state']), { timeoutMs: 10_000 })
     const [state, sd, until, mode, lidKind] = stdout.trim().split(/\s+/)
     if (exitCode !== 0 || (state !== 'on' && state !== 'off')) {
       await update($, lid, prev => ({ ...prev, known: true, failed: true }))
@@ -104,14 +121,15 @@ async function refresh($: Engine): Promise<void> {
   }
 }
 
-async function toggle($: Engine, t: Strings): Promise<void> {
+async function toggle($: Engine, t: Strings, hours: number): Promise<void> {
   const cur = await read($, lid)
   if (cur.busy || cur.failed || !cur.hasLid) return
   const turnOn = !cur.on && !cur.sleepDisabled
   await update($, lid, prev => ({ ...prev, busy: true }))
   try {
     // Touch ID or the password dialog waits for the person, so allow two minutes
-    const { exitCode, stdout } = await $.process.run(script($, turnOn ? 'on' : 'off', '--gui'), { timeoutMs: 120_000 })
+    const args = turnOn ? ['on', '--gui', '--hours', String(hours)] : ['off', '--gui']
+    const { exitCode, stdout } = await $.process.run(script($, args), { timeoutMs: 120_000 })
     if (turnOn) $.ui.toast(exitCode === 0 ? t.turnedOn : t.notOn)
     else $.ui.toast(/still 1/.test(stdout) ? t.offReset : t.off)
   } catch {
@@ -126,6 +144,7 @@ export const register: Register = (on, options) => {
   const isHe = options.language === 'he'
   const t: Strings = isHe ? TEXT.he : TEXT.en
   const rtl = (s: string) => (isHe ? `${RTL_START}${s}${RTL_END}` : s)
+  const hours = asHours(options.hours) ?? 12 // what a click on the chip turns it on for
 
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'lid-awake', description: t.command })
@@ -151,7 +170,7 @@ export const register: Register = (on, options) => {
     const c = chip(t, l)
     return (
       <Box flexDirection="row" gap={1} alignItems="center">
-        <Button key="lid-chip" plain onPress={() => void toggle($, t)}>
+        <Button key="lid-chip" plain onPress={() => void toggle($, t, hours)}>
           {/* the desktop draws any button here as a compact pill of its own size; tried 04/11: no plain, a larger text and padding all leave it the same or cut it to "…" */}
           <Text size="body" color={c.color} dimColor={!c.color}>{rtl(c.text)}</Text>
         </Button>
@@ -160,9 +179,11 @@ export const register: Register = (on, options) => {
     )
   })
 
-  // State, what ends it, one button.
+  // State and what ends it. Off: how long (quick choices, the default first marked, or any 1-72); on: one button off.
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Text, Button } = $.ui.resolve(e)
+    const els = $.ui.resolve(e)
+    const { Box, Text, Button } = els
+    const Input = 'Input' in els ? els.Input : undefined // the mobile app draws no field yet
     const l = await read($, lid)
     if (!l.known) return <Text dimColor>{rtl(t.checking)}</Text>
     if (l.failed) return <Text dimColor>{rtl(t.macOnly)}</Text>
@@ -174,11 +195,36 @@ export const register: Register = (on, options) => {
       <Box flexDirection="column" gap={1}>
         <Text color={color} weight="semibold">{rtl(head)}</Text>
         <Text dimColor>{rtl(l.on || l.sleepDisabled ? t.whenOn : t.whenOff)}</Text>
-        <Box flexDirection={isHe ? 'row-reverse' : 'row'}>
-          <Button key="lid-toggle" variant={l.on ? 'secondary' : 'primary'} onPress={() => void toggle($, t)}>
-            {rtl(l.busy ? t.wait : l.on || l.sleepDisabled ? t.turnOff : t.turnOn)}
-          </Button>
-        </Box>
+        {l.on || l.sleepDisabled || l.busy ? (
+          <Box flexDirection={isHe ? 'row-reverse' : 'row'}>
+            <Button key="lid-toggle" variant="secondary" onPress={() => void toggle($, t, hours)}>
+              {rtl(l.busy ? t.wait : t.turnOff)}
+            </Button>
+          </Box>
+        ) : (
+          <Box flexDirection="column" gap={1}>
+            <Text weight="medium">{rtl(t.forHow)}</Text>
+            <Box flexDirection={isHe ? 'row-reverse' : 'row'} gap={1} flexWrap="wrap">
+              {DURATIONS.map(n => ( // not `h`: that is the JSX factory
+                <Button key={`lid-h-${n}`} variant={n === hours ? 'primary' : 'secondary'} onPress={() => void toggle($, t, n)}>
+                  {rtl(t.hoursShort(n))}
+                </Button>
+              ))}
+            </Box>
+            {Input && <Input
+              key="lid-hours"
+              label={rtl(t.custom)}
+              placeholder="6"
+              submitLabel={rtl(t.turnOn)}
+              onSubmit={(value: string) => {
+                const n = asHours(value)
+                if (n === undefined) $.ui.toast(t.badHours)
+                else void toggle($, t, n)
+              }}
+            />}
+            <Text dimColor size="footnote">{rtl(t.chipDefault(hours))}</Text>
+          </Box>
+        )}
       </Box>
     )
   })

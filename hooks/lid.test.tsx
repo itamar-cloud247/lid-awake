@@ -15,6 +15,9 @@ const PANE = {
   },
 } as const
 
+// The arguments after the script path of the first `on` run, or undefined.
+const onArgs = (runs: string[][]) => runs.map(a => a.slice(3)).find(a => a[0] === 'on')
+
 // Stands for the engine beneath the mod: lid-awake.sh `state` answers `answer` (exit `code`), other runs succeed.
 function engine(on: Parameters<TestBody>[1], answer: string, runs: string[][] = [], code = 0) {
   on('clock.every', () => ({ value: undefined }))
@@ -57,9 +60,10 @@ for (const surface of ['desktop', 'terminal'] as const) {
     await $.session.start({ cwd: '/', surface, isInteractive: true })
     const ui = await $.ui.mount({ ...PANE, surface })
     expect((await ui.find({ type: 'Text', text: /Off/ }))?.text).toContain('○ Off')
-    await ui.press({ key: 'lid-toggle' })
-    const run = runs.find(a => a.at(-2) === 'on' && a.at(-1) === '--gui')
+    await ui.press({ key: 'lid-h-12' })
+    const run = runs.find(a => a[3] === 'on')
     expect(run?.[2]).toMatch(/\/lid-awake\.sh$/)
+    expect(onArgs(runs)).toEqual(['on', '--gui', '--hours', '12'])
     await ui.unmount()
   })
 
@@ -80,7 +84,7 @@ for (const surface of ['desktop', 'terminal'] as const) {
     const ui = await $.ui.mount({ plugin: 'lid-awake', surface, component: 'SessionMode', props: { modes: [] } })
     expect((await ui.find({ type: 'Text', text: /Lid/ }))?.text).toContain('☾ Lid: sleep')
     await ui.press({ key: 'lid-chip' })
-    expect(runs.some(a => a.at(-2) === 'on' && a.at(-1) === '--gui')).toBe(true)
+    expect(onArgs(runs)).toEqual(['on', '--gui', '--hours', '12'])
     await ui.unmount()
   })
 
@@ -90,7 +94,7 @@ for (const surface of ['desktop', 'terminal'] as const) {
     await $.session.start({ cwd: '/', surface, isInteractive: true })
     const ui = await $.ui.mount({ ...PANE, surface })
     expect((await ui.find({ type: 'Text', text: /did not answer/ }))?.text).toContain('macOS only')
-    expect(runs.some(a => a.at(-1) === '--gui')).toBe(false)
+    expect(onArgs(runs)).toBeUndefined()
     await ui.unmount()
   })
 }
@@ -114,5 +118,30 @@ test('no chip on a Mac with no lid, and a press does nothing', async ($, on) => 
   const pane = await $.ui.mount({ ...PANE, surface: 'desktop' })
   expect((await pane.find({ type: 'Text', text: /no lid/ }))?.text).toContain('no lid')
   await pane.unmount()
-  expect(runs.some(a => a.at(-1) === '--gui')).toBe(false)
+  expect(onArgs(runs)).toBeUndefined()
+})
+
+test('the hours option sets what the chip turns it on for', { options: { hours: 3 } }, async ($, on) => {
+  const runs: string[][] = []
+  engine(on, 'off 0 - - lid\n', runs)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'lid-awake', surface: 'desktop', component: 'SessionMode', props: { modes: [] } })
+  await ui.press({ key: 'lid-chip' })
+  expect(onArgs(runs)).toEqual(['on', '--gui', '--hours', '3'])
+  await ui.unmount()
+})
+
+test('pane: a quick duration, a custom one, and a bad one', async ($, on) => {
+  const runs: string[][] = []
+  engine(on, 'off 0 - - lid\n', runs)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  await ui.press({ key: 'lid-h-4' })
+  expect(onArgs(runs)).toEqual(['on', '--gui', '--hours', '4'])
+  runs.length = 0
+  await ui.input({ key: 'lid-hours', text: '99' })
+  expect(onArgs(runs)).toBeUndefined()
+  await ui.input({ key: 'lid-hours', text: '6' })
+  expect(onArgs(runs)).toEqual(['on', '--gui', '--hours', '6'])
+  await ui.unmount()
 })

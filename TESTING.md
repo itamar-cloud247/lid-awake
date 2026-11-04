@@ -6,7 +6,7 @@ Done without root (04/11/2026 draft):
 - [x] `zsh -n`. Bad options rejected (`--hours 99`, `--min-batt 'a[$(id)]'`).
 - [x] Loop started with junk arguments → end=0, min_batt=100, ac_only=1 → exits "cap reached" at once. No command substitution ran.
 - [x] `as_root` guard command (stubbed guard) under `/bin/sh -c` (as `do shell script` runs it) and `zsh -f -c`: returns at once, guard ppid 1, marker set, removed on TERM.
-- [x] Mod: `claude plugin validate` passes (only an icon warning); `claude plugin test` 8/8 on desktop and terminal (on, left on, a press runs `on --gui` on the bundled script, no answer = macOS only); `tsc` strict clean.
+- [x] Mod: `claude plugin validate` passes (only an icon warning); `claude plugin test` 16/16 on desktop and terminal (on, left on, a press runs `on --gui` on the bundled script, no answer = macOS only); `tsc` strict clean.
 - [x] Guard snippet with `pmset`/`logger` stubbed: bad pid refuses to start. Junk min/end → ends at once ("cap"). End beyond 72h clamped. Loop killed → "loop gone". USR1 → reset ("signal"). HUP and TSTP ignored (state `S`, not `T`). TERM → reset.
 
 Needs a real run (sudo):
@@ -27,4 +27,5 @@ Needs a real run (sudo):
 - [ ] Mod: install from a local marketplace (`claude plugin marketplace add ~/Documents/lid-awake`, then install), open Claude Desktop → the "Lid closed" pane appears; Turn on → Touch ID/password → green "On until HH:MM"; Turn off → "Off"; `/lid-awake` reopens the pane.
 - [ ] Mac with no lid (iMac / Mac mini / Studio): `state` ends `nolid`, `on` refuses, no chip beside the model picker, the pane says there is no lid.
 - [ ] Install by link: in a fresh Claude session on another Mac, "Install the lid-awake mod from <link>" → Claude checks the Mac, explains, asks, installs with `--config language=…`, and runs no sudo.
+- [ ] Hours: `/plugin configure lid-awake@lid-awake` hours=3 → a chip click shows "Awake until" now+3h. Pane: 4h button → until now+4h; custom 6 → now+6h; 99 → message, nothing starts.
 - [ ] `on --ac-only` (no sudo) on AC, lid closed 5 min → awake; unplug → sleeps.

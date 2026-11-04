@@ -1,6 +1,6 @@
 {
   "name": "lid-awake",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "Keep a MacBook awake with the lid closed, on battery too: a small colored chip beside the model picker (one click on/off) and a details pane, running the bundled lid-awake.sh. English or Hebrew labels.",
   "types": "./types/index.d.ts",
   "userConfig": {
@@ -13,6 +13,12 @@
         "en",
         "he"
       ]
+    },
+    "hours": {
+      "type": "number",
+      "title": "Default hours",
+      "description": "How long a click on the chip keeps the Mac awake: a whole number from 1 to 72 (12 by default). The pane (/lid-awake) offers other durations and any custom one.",
+      "default": 12
     }
   }
 }

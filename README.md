@@ -43,13 +43,13 @@ The repository is also a Claude Code plugin. It puts a small chip beside the mod
 | `☀ Awake until 06:13` (green) | On, until that time. |
 | `⚠ Sleep disabled` (red) | `SleepDisabled` was left on by a restart or crash. A click resets it. |
 
-`/lid-awake` opens a pane with the details. The mod runs the bundled `lid-awake.sh` (`state` every 30s, `on --gui` / `off --gui` on a click). You approve with Touch ID (when sudo has `pam_tid`) or macOS's password dialog. The mod itself runs nothing as root. The labels are in English or Hebrew: the `language` option (`en` or `he`).
+**How long:** a click on the chip turns it on for the `hours` option (12 by default, any whole number from 1 to 72). `/lid-awake` opens a pane with the details, quick choices (1, 2, 4, 8, 12, 24 hours) and a field for any other number of hours. The mod runs the bundled `lid-awake.sh` (`state` every 30s, `on --gui` / `off --gui` on a click). You approve with Touch ID (when sudo has `pam_tid`) or macOS's password dialog. The mod itself runs nothing as root. The labels are in English or Hebrew: the `language` option (`en` or `he`).
 
 ```
 /plugin install lid-awake --marketplace itamar-cloud247/lid-awake
 ```
 
-From a shell: `claude plugin install lid-awake --marketplace itamar-cloud247/lid-awake` (add `--config language=he` for Hebrew). In the Claude desktop app: click **+** next to the prompt box, then **Plugins**, **Add marketplace** with `itamar-cloud247/lid-awake`, then **Add plugin**. Then run `/reload-plugins`, or open a new session.
+From a shell: `claude plugin install lid-awake --marketplace itamar-cloud247/lid-awake` (add `--config language=he` for Hebrew, `--config hours=4` for a 4-hour default). In the Claude desktop app: click **+** next to the prompt box, then **Plugins**, **Add marketplace** with `itamar-cloud247/lid-awake`, then **Add plugin**. Then run `/reload-plugins`, or open a new session.
 
 Read the script before you run it with sudo. It is under 200 lines. Keep it where only you can write it: whatever is in the file runs as root the next time you type your password.
 
@@ -160,11 +160,17 @@ This is Apple's own mechanism (macOS 14 and later; `sudo_local` survives macOS u
 You are installing this mod for the person who gave you this repository's link. Take `<owner>/<repo>` from that link.
 
 1. **Check the Mac.** `uname -s` must print `Darwin`, and `ioreg -r -k AppleClamshellState -d 1 | grep -q AppleClamshellState` must succeed (a MacBook). Otherwise tell the person it does not fit (see [Requirements](#requirements)) and stop.
-2. **Tell them, and ask.** In a few lines: a chip beside the model picker keeps the Mac awake with the lid closed, on battery too, until they turn it off. It ends by itself at the end time (12h), at 15% battery, or on heavy heat. Each turn-on asks for admin rights (Touch ID or password). Mention the two main [Risks](#risks): an awake, locked Mac keeps its FileVault keys in memory, and heat in a closed bag. Ask which language they want (`en` or `he`) and whether to install. Install nothing without their yes.
-3. **Install.** `claude plugin install lid-awake --marketplace <owner>/<repo> --config language=<en|he>`. If `claude` is not on the PATH (as in some desktop app sessions), give them the steps instead: **+** next to the prompt box, **Plugins**, **Add marketplace** with `<owner>/<repo>`, **Add plugin** `lid-awake`, then `/plugin configure lid-awake@lid-awake` for the language.
+2. **Tell them, and ask.** In a few lines: a chip beside the model picker keeps the Mac awake with the lid closed, on battery too, until they turn it off. It ends by itself at the end time (12h), at 15% battery, or on heavy heat. Each turn-on asks for admin rights (Touch ID or password). Mention the two main [Risks](#risks): an awake, locked Mac keeps its FileVault keys in memory, and heat in a closed bag. Ask which language they want (`en` or `he`), how many hours a click should keep it awake (1 to 72, 12 if they have no preference; they can pick another duration each time from `/lid-awake`), and whether to install. Install nothing without their yes.
+3. **Install.** `claude plugin install lid-awake --marketplace <owner>/<repo> --config language=<en|he> --config hours=<1-72>`. If `claude` is not on the PATH (as in some desktop app sessions), give them the steps instead: **+** next to the prompt box, **Plugins**, **Add marketplace** with `<owner>/<repo>`, **Add plugin** `lid-awake`, then `/plugin configure lid-awake@lid-awake` for the language and the hours.
 4. **Check it.** `claude plugin list` shows `lid-awake@lid-awake` enabled. Tell them to run `/reload-plugins` (or open a new session), and that the chip `☾ Lid: sleep` appears beside the model picker.
 5. **Do not** run `sudo`, `lid-awake.sh on`, `on --gui` or `boot-reset` for them, and do not edit `/etc/pam.d` or sudoers to add Touch ID. Turning it on is their click and their approval. Point them to `boot-reset` in [Risks](#risks) if they want a reset at every boot. That one they run themselves.
-6. **Touch ID.** If `/etc/pam.d/sudo_local` has no uncommented `pam_tid.so` line, tell them the chip will use the password dialog, and that they can turn on Touch ID for sudo themselves with the command in [Touch ID (optional)](#touch-id-optional), which affects every `sudo` on the Mac. Do not run it for them.
+6. **Touch ID.** Check with `grep -qE '^[[:space:]]*auth[[:space:]]+sufficient[[:space:]]+pam_tid\.so' /etc/pam.d/sudo_local`. If that fails, tell them the chip will ask for their password in a dialog, and offer Touch ID instead: give them this command to run themselves, in Terminal (or after `!` at the Claude Code prompt), and say it turns on Touch ID for **every** `sudo` on the Mac, and that `sudo rm /etc/pam.d/sudo_local` undoes it:
+
+   ```bash
+   sed 's/^#auth/auth/' /etc/pam.d/sudo_local.template | sudo tee /etc/pam.d/sudo_local
+   ```
+
+   Do not run it for them (it changes how the Mac authenticates). Afterwards `sudo -k; sudo true` should ask for their finger, and so will the chip.
 
 To remove it: `claude plugin uninstall lid-awake@lid-awake`, then the [Uninstall](#uninstall) steps.
 
@@ -201,7 +207,8 @@ MIT. See [LICENSE](LICENSE).
 - `on --ac-only`: בלי sudo. מחזיק רק כשהמחשב מחובר לחשמל.
 - `--gui`: ‏Touch ID (אם הוגדר ל-sudo) או חלון הסיסמה של macOS, במקום sudo בטרמינל. זה מה שהכפתור מריץ.
 - **כמוד ל-Claude:** ה-repo הוא גם תוסף. הוא מוסיף תווית קטנה ליד בחירת המודל, וצבע התווית מראה את המצב: אפור כשכבוי, ירוק עם שעת הסיום כשפעיל, ואדום כשנשאר דלוק. לחיצה אחת מדליקה או מכבה, ו-`/lid-awake` פותח חלונית עם הפרטים. השפה נקבעת בהגדרה `language` (‏`en` או `he`). התקנה: `/plugin install lid-awake --marketplace itamar-cloud247/lid-awake`. המוד עצמו לא מריץ כלום כ-root.
-- **התקנה דרך Claude:** נותנים ל-Claude את הקישור ל-repo ואומרים לו: "תתקין לי את המוד lid-awake מהקישור הזה". הוא בודק שהמחשב מתאים, מסביר מה המוד עושה ושואל לפני שהוא מתקין. את האישור בכל הדלקה (Touch ID או סיסמה) נותנים בעצמכם.
+- **לכמה זמן:** לחיצה על התווית מפעילה לפי ההגדרה `hours`. ברירת המחדל היא 12 שעות, ואפשר לבחור כל מספר שלם מ-1 עד 72. ב-`/lid-awake` יש בחירה מהירה (1, 2, 4, 8, 12 או 24 שעות) ושדה למספר שעות אחר.
+- **התקנה דרך Claude:** נותנים ל-Claude את הקישור ל-repo ואומרים לו: "תתקין לי את המוד lid-awake מהקישור הזה". הוא בודק שהמחשב מתאים, מסביר מה המוד עושה, ושואל באיזו שפה ולכמה שעות. הוא מתקין רק אחרי אישור. אם Touch ID לא מופעל ל-sudo, הוא נותן את הפקודה להפעלה, אבל לא מריץ אותה בעצמו. את האישור בכל הדלקה (Touch ID או סיסמה) נותנים בעצמכם.
 - **Touch ID:** הכלי משתמש ב-Touch ID מעצמו בכל Mac שבו Touch ID מופעל ל-sudo. בכל Mac אחר נפתח חלון הסיסמה. כדי להפעיל, מריצים פעם אחת בטרמינל `sed 's/^#auth/auth/' /etc/pam.d/sudo_local.template | sudo tee /etc/pam.d/sudo_local`. זה חל על **כל** פקודת sudo ב-Mac, לא רק על הכלי. ביטול: `sudo rm /etc/pam.d/sudo_local`.
 - **דרישות:**
   - MacBook. במחשב בלי מכסה התווית מוסתרת.
