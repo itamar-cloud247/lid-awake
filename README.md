@@ -1,0 +1,194 @@
+# lid-awake
+
+Keep a MacBook awake with the lid closed, **on battery too**, for as long as you choose. Then let it sleep again. One zsh script, no app, no kernel extension, nothing left installed.
+
+Written so a long-running job keeps going while the laptop is in a bag: Claude Desktop working through a task, a VPN session, a download.
+
+[עברית למטה](#עברית)
+
+## Quick start
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/<owner>/lid-awake/main/lid-awake.sh   # or clone the repo
+chmod +x lid-awake.sh
+./lid-awake.sh on        # asks your sudo password once; AC + battery, cap 12h, releases at 15% battery
+# close the lid, go
+./lid-awake.sh off       # when you are back
+./lid-awake.sh status
+```
+
+Read the script before you run it with sudo. It is under 200 lines. Keep it where only you can write it: whatever is in the file runs as root the next time you type your password.
+
+| Command | What it does |
+|---|---|
+| `on [--hours 1-72] [--min-batt 10-90]` | AC and battery. Needs sudo once. Defaults: 12h, 15%. |
+| `on --ac-only [--until-idle]` | No sudo. Holds only while plugged in. Unplugged + lid closed sleeps as usual. `--until-idle` lets go 10 min after Claude Desktop stops working. |
+| `off` | Stops the hold. If `SleepDisabled` is still 1 after 12s, resets it (sudo) and exits non-zero if that fails. |
+| `status` | Loop, root guard, `SleepDisabled`, power assertions, last log lines. Warns about a leftover `SleepDisabled=1`. |
+| `boot-reset install` / `uninstall` | Optional. A one-line root job that, at every boot, runs `pmset -a disablesleep 0` if lid-awake was the one that set it. See [Risks](#risks). |
+
+## Why Claude Desktop's keep-awake and `caffeinate` are not enough
+
+macOS has two different kinds of sleep:
+
+* **Idle sleep** – nobody touched the Mac for a while. Claude Desktop's *keep awake* setting, and most "keep awake" apps, take a power assertion (`PreventUserIdleSystemSleep` / `NoIdleSleepAssertion`) against this one. It works while the lid is open.
+* **Clamshell sleep** – you closed the lid. This ignores idle-sleep assertions. With the keep-awake setting on, a closed lid still went to sleep: `pmset -g log` shows `Clamshell Sleep`.
+
+`caffeinate -s` (`PreventSystemSleep`) does keep a closed lid awake, **but only on AC power**. On battery the assertion is ignored.
+
+The only switch that keeps a closed lid awake on battery is `pmset -a disablesleep 1` (`SleepDisabled`). It needs root, and **it survives a reboot**. Forget to turn it back off, and the Mac never sleeps again: not in your bag, and not from the Apple menu either. lid-awake exists to turn it on and make sure it gets turned back off.
+
+With an external display, power and a keyboard connected, macOS clamshell mode already stays awake. You do not need this tool for that.
+
+## How it works
+
+```
+you ── on ──► user loop (no root)                         root guard (sudo, detached)
+              • holds `caffeinate -s` (AC)                 • pmset -a disablesleep 1
+              • checks cap, battery, heat,                 • every 10s: loop alive? cap? battery < min?
+                guard alive, every 30s                       thermal pressure heavy?
+              • turns the panel off on lid close           • any "no" → disablesleep 0 and exit
+              • writes ~/Library/Logs/lid-awake.log        • logs to syslog only
+```
+
+* `off`, the cap, low battery, heavy thermal pressure, a crashed loop or a killed guard each end the hold. Whichever side notices first stops. The guard's exit trap puts `disablesleep` back to 0.
+* The hold does not depend on any app. A Claude session sitting at a permission prompt keeps the Mac awake too.
+* View the guard's log: `log show --last 1d --predicate 'eventMessage CONTAINS "lid-awake"'`.
+
+### Security design
+
+* **Small root surface.** Root runs only a fixed zsh snippet embedded in the script (`zsh -f`, no rc files). It has a fixed `PATH` (`/usr/bin:/bin:/usr/sbin:/sbin`) and `cd /`. It reads no user-writable file. Its three arguments (loop pid, battery %, end time) are re-validated as digits inside the guard. A bad value falls back to the one that ends the hold, and the end time is capped at 72h whatever the caller passes.
+* **Detached from sudo.** The guard is started in the background, and sudo returns right away. The user-level side therefore cannot reach it with signals relayed through sudo. It exits through its reset trap on INT/TERM/QUIT/USR1/USR2/ALRM/PIPE/XCPU/XFSZ. It ignores HUP, so closing the Terminal window does not end the hold, and it ignores TSTP, so it cannot be paused while holding.
+* **Fail-safe parsing.** Every value from `pmset`/`notifyutil` that feeds arithmetic must be digits. If it is not, battery reads as 0% and thermal as "heavy", and the hold ends. The battery is read from the `InternalBattery` line only, so a UPS at 100% cannot hide a laptop battery at 8%.
+* **One `on` at a time.** A lock directory stops two `on` runs from racing into two loops and two guards. `on` also fails clearly when `sudo -n` cannot reuse the ticket it just got (for example, `timestamp_timeout=0`).
+* **Marker for the boot reset.** The guard creates `/var/db/lid-awake.active` (root-only) when it sets the flag, and removes it when it resets. `boot-reset` resets only when that marker is present, so a `SleepDisabled=1` an admin set on purpose is left alone.
+* **No pid trust.** `off`, `status` and the guard only accept a pid whose command line carries the loop's marker. A stale or edited pid file cannot make `off` kill some other process.
+* **Leftover detection.** `on` refuses to start if `SleepDisabled=1` is already set (left over from a reboot, a crash, or another tool). It also refuses to report success unless the guard process is running and the flag is set. `status` warns about a leftover. The fixed `PATH` and `/usr/bin/sudo` keep a planted `sudo`/`pmset`/`grep` earlier in your `PATH` out of the picture.
+
+## Test evidence
+
+MacBook Pro M3 Max, macOS 27, on battery, iPhone hotspot, FortiClient VPN, a probe every few seconds (internet + VPN + RDP host):
+
+| Run | Lid closed | Samples | Failed | Largest gap | `pmset -g log` |
+|---|---|---|---|---|---|
+| 1 | 5 min | 52 | 0 | 6 s | no Sleep entry |
+| 2 | 15.5 min | 177 | 0 | – | no Sleep entry; battery stayed at 100% (display reading), no heat |
+
+On the same Mac, Claude Desktop's keep-awake setting alone produced `Clamshell Sleep` with the lid closed.
+
+These tests used the original script that this release was cut from. The release adds hardening that has **not yet been run on a real Mac**: the sudo-detached guard, guard-alive checks, `boot-reset`, refusal on a leftover flag, and `displaysleepnow` on lid close. The guard logic itself was exercised with `pmset` stubbed out. See the checklist in [TESTING.md](TESTING.md).
+
+## Compared with Amphetamine
+
+[Amphetamine](https://apps.apple.com/app/amphetamine/id937984704) is a polished, free menu-bar app with triggers, schedules and a GUI. If you want a GUI, use it. Its closed-display mode relies on the same underlying `SleepDisabled` flag. Its own support page says a crash or force-quit during a closed-display session can leave the Mac unable to sleep, and recommends installing *Amphetamine Enhancer* as the fail-safe for that case.
+
+| | lid-awake | Amphetamine closed-display mode |
+|---|---|---|
+| Install | one script, nothing resident | App Store app (+ Enhancer for the fail-safe) |
+| Root | `sudo` once per `on`, you type it | through Enhancer's helper |
+| Battery on a closed lid | yes, with a battery floor | yes (Apple Silicon has had power-source-change issues, addressed in 5.3+ per its changelog) |
+| Ends on heat / low battery | yes, enforced by the root side | battery threshold: yes; heat: not that we know of |
+| Crash / reboot leftover | guard reset trap; `status` warns; optional `boot-reset` | Enhancer fail-safe |
+| Auditable | ~170 lines of zsh | closed source |
+| GUI, schedules, triggers | no | yes |
+
+We have not tested Amphetamine on the same hardware. The comparison is based on its documentation and changelog.
+
+## Risks
+
+Read these before you use it in a bag.
+
+* **An awake, locked Mac keeps its FileVault keys in memory.** A sleeping Mac with "destroy FileVault key on standby" or hibernate keeps them out. A stolen laptop that is awake and locked is a better target (DMA/cold-boot class attacks, and any network service you left listening) than one that is asleep or off. Wi-Fi stays up. If that matters to you, do not leave it unattended.
+* **Heat in a closed bag.** A closed MacBook under load, in a bag, has little airflow. The guard ends the hold on *heavy* thermal pressure, and macOS throttles before that, but "heavy" is a late signal. Idle or light work is fine. A long compile or a model run in a padded bag is not.
+* **Battery.** Default floor 15% (lowest allowed 10%), default cap 12h. Pick shorter values for a bag (`--hours 3 --min-batt 30`). The floor is what makes it sleep. Do not count on macOS to hibernate cleanly at 0% while sleep is disabled.
+* **The cap is wall-clock time.** Setting the clock back extends it. The battery floor and heat checks still apply.
+* **`SleepDisabled` survives a reboot.** If the Mac restarts mid-hold (update, panic, hard power-off), nothing resets it until you run `off`, and Apple-menu Sleep does nothing meanwhile. `status` warns about it. `boot-reset install` fixes it at every boot by adding a root LaunchDaemon (`/Library/LaunchDaemons/local.lid-awake.boot-reset.plist`, fixed arguments, no script behind it). Endpoint security tools may flag a new LaunchDaemon as persistence. That is expected, and `boot-reset uninstall` removes it.
+* **Do not mix it with other tools that toggle `SleepDisabled`.** When one of them ends, it resets the flag for all of them. `on` refuses to start while the flag is already set.
+* **`SleepDisabled` is system-wide**, so it affects every user on the Mac. Managed (MDM) Macs may block or flag it.
+* **While it holds, you cannot sleep the Mac by hand.** Run `off` first.
+
+## Uninstall
+
+`./lid-awake.sh off`, `./lid-awake.sh boot-reset uninstall` (if installed), then delete the script, `~/Library/Application Support/lid-awake` and `~/Library/Logs/lid-awake.log`.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
+
+---
+
+<div dir="rtl">
+
+## עברית
+
+**lid-awake** משאיר MacBook ער עם מכסה סגור, **גם על סוללה**, עד שאתם מכבים. אחר כך הוא מחזיר אותו לישון. זה סקריפט zsh אחד, בלי אפליקציה ובלי תוסף קרנל, ולא נשאר אחריו כלום מותקן.
+
+הוא נכתב כדי שעבודה ארוכה תמשיך גם כשהמחשב בתיק: ‏Claude Desktop שעובד על משימה, ‏VPN, הורדה.
+
+### שימוש
+
+<div dir="ltr">
+
+```bash
+./lid-awake.sh on        # סיסמת sudo פעם אחת; מטען וסוללה, עד 12 שעות, משחרר ב-15%
+./lid-awake.sh off       # כשחוזרים
+./lid-awake.sh status
+```
+
+</div>
+
+- `on --ac-only`: בלי sudo. מחזיק רק כשהמחשב מחובר לחשמל.
+- `--until-idle`: משחרר 10 דקות אחרי ש-Claude Desktop מפסיק לעבוד.
+- `--hours` ו-`--min-batt`: מגבלת זמן ורצפת סוללה (10%–90%).
+
+תקראו את הסקריפט לפני שאתם מריצים אותו עם sudo. תשמרו אותו במקום שרק אתם יכולים לכתוב בו: מה שיש בקובץ ירוץ כ-root בפעם הבאה שתקלידו סיסמה.
+
+### למה ההגדרה של Claude Desktop ו-`caffeinate` לא מספיקים
+
+- **שינה בחוסר פעילות:** ההגדרה keep awake של Claude Desktop ורוב אפליקציות ה"ער" מונעות רק אותה. היא עובדת כשהמכסה פתוח.
+- **סגירת מכסה:** זו שינה אחרת, והיא מתעלמת מהן. בבדיקה, עם ההגדרה דלוקה, המחשב נרדם (`Clamshell Sleep` ב-`pmset -g log`).
+- **`caffeinate -s`:** מחזיק מכסה סגור, אבל **רק על מטען**.
+- **על סוללה:** הדבר היחיד שעובד הוא `pmset -a disablesleep 1`. הוא דורש root, ו**נשאר גם אחרי Restart**. הכלי קיים כדי להדליק אותו, ולוודא שהוא יכבה.
+
+### איך זה עובד
+
+- **לולאה ברמת המשתמש:** מחזיקה את `caffeinate -s`.
+- **שומר root קטן:** מנותק מ-sudo. הוא מדליק את `disablesleep`, ומכבה אותו כש:
+  - הלולאה נעלמה (`off` או קריסה),
+  - עברה מגבלת הזמן,
+  - הסוללה מתחת לרצפה,
+  - יש עומס חום כבד.
+- **השומר מוגבל:** `PATH` קבוע, לא קורא שום קובץ שהמשתמש יכול לכתוב, ובודק מחדש את הקלט שלו. ערך לא תקין הופך לערך שמשחרר את ההחזקה, והזמן מוגבל ל-72 שעות.
+
+### הוכחות מבדיקה
+
+MacBook Pro M3 Max, על סוללה, נקודה חמה מאייפון, ו-FortiClient VPN:
+
+| ריצה | מכסה סגור | דגימות | נכשלו | הפער הגדול ביותר | Sleep ב-`pmset -g log` |
+|---|---|---|---|---|---|
+| 1 | 5 דק' | 52 | 0 | 6 ש' | אין |
+| 2 | 15.5 דק' | 177 | 0 | – | אין. הסוללה נשארה על 100%, בלי עומס חום |
+
+הבדיקות נעשו בגרסה המקורית. החיזוקים שנוספו בגרסה הזו עוד לא נבדקו ב-Mac אמיתי (ראו [TESTING.md](TESTING.md)).
+
+### מול Amphetamine
+
+- **Amphetamine:** אפליקציה חינמית ומצוינת עם ממשק גרפי. גם מצב closed-display שלה נשען על אותו `SleepDisabled`. לפי התמיכה שלה, קריסה באמצע יכולה להשאיר את המחשב בלי שינה, ולכן הם ממליצים להתקין Amphetamine Enhancer כ-fail-safe.
+- **lid-awake:**
+  - סקריפט קצר שאפשר לקרוא.
+  - לא נשאר מותקן.
+  - נעצר בחום כבד ובסוללה נמוכה, והאכיפה בצד ה-root.
+  - **אין לו** ממשק, תזמונים או טריגרים.
+- **לא בדקנו את Amphetamine על אותה חומרה.**
+
+### סיכונים
+
+- **מחשב ער ונעול מחזיק את מפתחות FileVault בזיכרון.** מחשב גנוב שער הוא מטרה טובה יותר ממחשב ישן או כבוי. גם ה-Wi-Fi נשאר מחובר.
+- **חום בתיק סגור:** עבודה קלה בסדר. עבודה כבדה בתיק מרופד לא. השומר עוצר רק בעומס חום **כבד**, שהוא סימן מאוחר.
+- **סוללה:** לתיק מומלץ `--hours 3 --min-batt 30`.
+- **`SleepDisabled` נשאר אחרי Restart.** עד שמריצים `off`, המחשב לא ישן, גם לא מתפריט Apple.
+  - `status` מזהיר על זה.
+  - `boot-reset install` מאפס בכל הפעלה, עם LaunchDaemon קטן, ורק אם lid-awake הוא שהדליק את הדגל. כלי EDR עלולים לסמן אותו כ-persistence.
+- **לא לשלב** עם כלים אחרים שמשנים את `SleepDisabled`.
+
+</div>
