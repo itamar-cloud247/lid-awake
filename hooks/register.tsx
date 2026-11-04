@@ -152,7 +152,7 @@ export const register: Register = (on, options) => {
     return (
       <Box flexDirection="row" gap={1} alignItems="center">
         <Button key="lid-chip" plain onPress={() => void toggle($, t)}>
-          {/* body size, as the model picker beside it: the desktop sizes the button's frame to its text */}
+          {/* the desktop draws any button here as a compact pill of its own size; tried 04/11: no plain, a larger text and padding all leave it the same or cut it to "…" */}
           <Text size="body" color={c.color} dimColor={!c.color}>{rtl(c.text)}</Text>
         </Button>
         {below}
