@@ -12,13 +12,13 @@ Give Claude (Claude Code in the terminal, or the Code tab of the Claude desktop 
 
 > Install the lid-awake mod from <this repository's link>
 
-Claude reads [Instructions for Claude](#instructions-for-claude) below, checks that your Mac fits, tells you what the mod does and asks before installing it. You do the one thing it must not do for you: approve each turn-on with Touch ID or your password.
+Claude reads [Instructions for Claude](#instructions-for-claude) below, checks that your Mac fits, tells you what the mod does and asks before installing it. You do the one thing it must not do for you: run `./lid-awake.sh helper install` once in a terminal (it asks for sudo once). After that lid-awake never asks for a password.
 
 ## Requirements
 
 * **A MacBook.** On a Mac with no lid (iMac, Mac mini, Mac Studio) the chip stays hidden and `on` refuses: there is nothing to keep awake when a lid closes.
 * **macOS with its own tools only:** `pmset`, `caffeinate`, `ioreg`, `notifyutil`, `osascript`, `/bin/zsh`. No Homebrew. Tested on macOS 27, Apple Silicon (M3 Max). Intel Macs and older macOS versions have the same tools but have not been tested.
-* **An admin account**, or an admin's name and password: each turn-on asks for admin rights.
+* **An admin account**, or an admin's name and password: for the one-time `helper install`.
 * **Not blocked by your IT.** A managed (MDM) Mac may block or flag `pmset disablesleep`, and EDR may flag `boot-reset` as persistence.
 * **For the mod:** Claude Code 2.1.309 or later (the mod API, early access), in the terminal or the desktop app's Code tab. The script works without it.
 
@@ -27,7 +27,8 @@ Claude reads [Instructions for Claude](#instructions-for-claude) below, checks t
 ```bash
 curl -fsSLO https://raw.githubusercontent.com/itamar-cloud247/lid-awake/main/lid-awake.sh   # or clone the repo
 chmod +x lid-awake.sh
-./lid-awake.sh on        # asks your sudo password once; AC + battery, cap 12h, releases at 15% battery
+./lid-awake.sh helper install   # once (sudo): root-owned guard + a passwordless sudo rule for it
+./lid-awake.sh on        # no prompt; AC + battery, cap 12h, releases at 15% battery
 # close the lid, go
 ./lid-awake.sh off       # when you are back
 ./lid-awake.sh status
@@ -43,7 +44,7 @@ The repository is also a Claude Code plugin. It puts a small chip beside the mod
 | `☀ Awake until 06:13` (green) | On, until that time. |
 | `⚠ Sleep disabled` (red) | `SleepDisabled` was left on by a restart or crash. A click resets it. |
 
-**How long:** a click on the chip turns it on for the `hours` option (12 by default; 0.5 to 72, in half hours: 1.5 is an hour and a half). `/lid-awake` opens a pane with the details, quick choices (1, 2, 4, 8, 12, 24 hours) and a field for any other duration (for example 1.5). The mod runs the bundled `lid-awake.sh` (`state` every 30s, `on --gui` / `off --gui` on a click). You approve with Touch ID (when sudo has `pam_tid`) or macOS's password dialog. The mod itself runs nothing as root. The labels are in English or Hebrew: the `language` option (`en` or `he`).
+**How long:** a click on the chip turns it on for the `hours` option (12 by default; 0.5 to 72, in half hours: 1.5 is an hour and a half). `/lid-awake` opens a pane with the details, quick choices (1, 2, 4, 8, 12, 24 hours) and a field for any other duration (for example 1.5). The mod runs the bundled `lid-awake.sh` (`state` every 30s, `on --gui` / `off --gui` on a click). Nothing asks for a password: the root step is the installed helper. The mod itself runs nothing as root. The labels are in English or Hebrew: the `language` option (`en` or `he`).
 
 ```
 /plugin install lid-awake --marketplace itamar-cloud247/lid-awake
@@ -51,14 +52,14 @@ The repository is also a Claude Code plugin. It puts a small chip beside the mod
 
 From a shell: `claude plugin install lid-awake --marketplace itamar-cloud247/lid-awake` (add `--config language=he` for Hebrew, `--config hours=4` for a 4-hour default). In the Claude desktop app: click **+** next to the prompt box, then **Plugins**, **Add marketplace** with `itamar-cloud247/lid-awake`, then **Add plugin**. Then run `/reload-plugins`, or open a new session.
 
-Read the script before you run it with sudo. It is under 200 lines. Keep it where only you can write it: whatever is in the file runs as root the next time you type your password.
+Read `lid-awake-guard` (about 60 lines) before `helper install`: it is the only code that runs as root. Install it from a clean, reviewed copy, then check the installed file (`shasum -a 256 /usr/local/libexec/lid-awake/lid-awake-guard`) against the repo on GitHub and read `sudo -n -l`. The installed copy is root-owned, so nothing running as you can change it later.
 
 | Command | What it does |
 |---|---|
-| `on [--hours 0.5-72] [--min-batt 10-90]` | AC and battery. Needs sudo once. Defaults: 12h, 15%. |
+| `on [--hours 0.5-72] [--min-batt 10-90]` | AC and battery. Needs the helper (`helper install`). Defaults: 12h, 15%. |
 | `on --ac-only [--until-idle]` | No sudo. Holds only while plugged in. Unplugged + lid closed sleeps as usual. `--until-idle` lets go 10 min after Claude Desktop stops working. |
-| `on --gui` / `off --gui` | Same, but admin rights come from Touch ID (if sudo has `pam_tid`) or macOS's own password dialog instead of `sudo` in a terminal. What the mod's button runs. |
-| `off` | Stops the hold. If `SleepDisabled` is still 1 after 12s, resets it (sudo) and exits non-zero if that fails. |
+| `helper install` / `helper uninstall` | Installs (or removes) the root guard at `/usr/local/libexec/lid-awake/lid-awake-guard` and `/etc/sudoers.d/lid-awake`, which allows exactly `lid-awake-guard start …` and `lid-awake-guard reset` without a password. `--gui` is still accepted and ignored. |
+| `off` | Stops the hold. If `SleepDisabled` is still 1 after 12s, resets it through the helper and exits non-zero if that fails. |
 | `state` | One line for widgets: `on\|off <SleepDisabled 0\|1> <until HH:MM\|-> <full\|ac\|-> <lid\|nolid>`. |
 | `status` | Loop, root guard, `SleepDisabled`, power assertions, last log lines. Warns about a leftover `SleepDisabled=1`. |
 | `boot-reset install` / `uninstall` | Optional. A one-line root job that, at every boot, runs `pmset -a disablesleep 0` if lid-awake was the one that set it. See [Risks](#risks). |
@@ -143,7 +144,7 @@ Read these before you use it in a bag.
 * **Do not mix it with other tools that toggle `SleepDisabled`.** When one of them ends, it resets the flag for all of them. `on` refuses to start while the flag is already set.
 * **`SleepDisabled` is system-wide**, so it affects every user on the Mac. Managed (MDM) Macs may block or flag it.
 * **While it holds, you cannot sleep the Mac by hand.** Run `off` first.
-* **`--gui` asks for your admin password in a dialog the script raises.** That is convenient, and it is also a habit attackers rely on. The dialog text is set by the script, so a modified copy could show the same text and run something else. Only type the password when you just clicked lid-awake yourself.
+* **Since 0.5.0 lid-awake never asks for admin rights.** Earlier versions ran root code from the user-writable script after a Touch ID or password prompt, so anything running as you could edit the script and get root at your next approval. Now the root part is a separate root-owned file with a narrow sudo rule. **If lid-awake (or anything claiming to be it) asks for your password or Touch ID, refuse.** The worst a process running as you can do with the helper is keep the Mac awake or let it sleep.
 
 ## Touch ID (optional)
 

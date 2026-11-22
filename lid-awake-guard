@@ -1,0 +1,59 @@
+#!/bin/zsh -f
+# lid-awake-guard: the only part of lid-awake that runs as root (security review 22/11/2026).
+# Installed root-owned by `lid-awake.sh helper install` at /usr/local/libexec/lid-awake/lid-awake-guard, with a sudoers
+# rule that lets the user run exactly two forms of it without a password:
+#   sudo -n /usr/local/libexec/lid-awake/lid-awake-guard start <loop pid> <min batt %> <end epoch>
+#   sudo -n /usr/local/libexec/lid-awake/lid-awake-guard reset
+# Nothing here reads a user-writable file, and every argument is checked again; a bad value falls back to the one that
+# releases the hold. The worst a caller can do with it is keep the Mac awake (each guard ends after at most 72 hours,
+# but a caller can start a new one with any process carrying the loop marker, and so hold the single guard slot) or let
+# it sleep; battery under 10% and heavy thermal pressure always end it. So a passwordless rule is safe, and lid-awake no
+# longer needs an admin prompt that would run code from the user's own (writable) copy of the script as root.
+PATH=/usr/bin:/bin:/usr/sbin:/sbin; cd /
+umask 022
+MARK=/var/db/lid-awake.active
+TAG=__lid_awake_loop
+(( EUID == 0 )) || { print -u2 "lid-awake-guard: must run as root (sudo -n $0 ...)"; exit 1 }
+num() { [[ $1 == <-> ]] && print $1 || print $2 }
+reset() { pmset -a disablesleep 0; rm -f $MARK }
+
+case "${1:-}" in
+  reset)
+    # End any running guard (its EXIT trap resets too), then reset in case none was running.
+    pkill -u 0 -f -- "^/bin/zsh -f /usr/local/libexec/lid-awake/lid-awake-guard run " 2>/dev/null
+    reset; logger -t lid-awake "guard: reset"; exit 0 ;;
+  start)
+    pid=${2:-} min=${3:-} end=${4:-}
+    [[ $pid == <2-99999> ]] || { logger -t lid-awake "guard: bad loop pid, not starting"; exit 1 }
+    ps -p $pid -o command= 2>/dev/null | grep -qF -- " $TAG " || { logger -t lid-awake "guard: pid $pid is not a lid-awake loop"; exit 1 }
+    pgrep -u 0 -f -- "lid-awake-guard run " >/dev/null && { logger -t lid-awake "guard: one is already running"; exit 1 }
+    [[ $min == <10-90> ]] || min=100
+    end=$(num "$end" 0)
+    # Detach: started from sudo, then reparented to launchd, so the user cannot signal it (it runs as root).
+    /usr/bin/nohup /bin/zsh -f /usr/local/libexec/lid-awake/lid-awake-guard run $pid $min $end </dev/null >/dev/null 2>&1 &
+    exit 0 ;;
+  run) ;;
+  *) print -u2 "usage: lid-awake-guard start <pid> <min batt> <end epoch> | reset"; exit 2 ;;
+esac
+
+pid=${2:-} min=${3:-} end=${4:-}
+[[ $pid == <2-99999> ]] || exit 1
+[[ $min == <10-90> ]] || min=100
+end=$(num "$end" 0); now=$(date +%s)
+(( end > now + 72 * 3600 )) && end=$(( now + 72 * 3600 ))
+trap "pmset -a disablesleep 0; rm -f $MARK; logger -t lid-awake \"guard: disablesleep 0 (\$why)\"" EXIT
+trap "why=signal; exit 0" INT TERM QUIT USR1 USR2 ALRM PIPE XCPU XFSZ
+trap "" HUP TSTP TTIN TTOU   # closing the Terminal window must not end or stop the hold
+why=""
+pmset -a disablesleep 1 && : > $MARK && logger -t lid-awake "guard: disablesleep 1 for loop $pid until $end"
+while :; do
+  ps -p $pid -o command= 2>/dev/null | grep -qF -- " $TAG " || { why="loop gone"; break }
+  (( $(date +%s) >= end )) && { why="cap"; break }
+  if ! pmset -g batt | head -1 | grep -q "AC Power"; then
+    b=$(num "$(pmset -g batt | grep InternalBattery | grep -oE "[0-9]+%" | head -1 | tr -d %)" 0)
+    (( b < min )) && { why="battery $b%"; break }
+  fi
+  t=$(num "$(notifyutil -g com.apple.system.thermalpressurelevel | awk '{print $2}')" 9)
+  (( t >= 2 )) && { why="thermal $t"; break }
+  sleep 10 & wait $!
+done

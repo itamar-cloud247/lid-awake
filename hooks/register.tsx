@@ -5,8 +5,8 @@ import type { LidState } from '../types'
 
 // A small chip beside the model picker (its color says the state, a click turns it on or off) and a "Lid closed"
 // pane with the details (`/lid-awake`). Both run the lid-awake.sh that ships beside this mod: `state` every 30 s, and
-// `on --gui` / `off --gui` on a press. The mod itself runs nothing as root: the admin step is the script's, through
-// Touch ID for sudo (when the Mac has pam_tid) or macOS's own password dialog. Labels in English or Hebrew: the
+// `on --gui` / `off --gui` on a press. The mod itself runs nothing as root, and since 0.5.0 neither does the script:
+// the root step is the root-owned lid-awake-guard, run through a passwordless sudo rule (`lid-awake.sh helper install`). Labels in English or Hebrew: the
 // `language` option.
 const PANE = 'lid-awake'
 const OFF: LidState = { known: false, failed: false, hasLid: true, on: false, sleepDisabled: false, until: '', mode: '', busy: false }
@@ -32,12 +32,12 @@ const TEXT = {
     checking: 'Checking lid-awake…',
     macOnly: 'lid-awake.sh did not answer. It runs on macOS only.',
     noLid: 'This Mac has no lid, so there is nothing to keep awake when it closes.',
-    busy: 'One moment… (waiting for Touch ID / password)',
+    busy: 'One moment…',
     headOn: (until: string, ac: boolean) => `● On${until ? ` until ${until}` : ''}${ac ? ' (on AC only)' : ''}`,
     headLeft: '⚠ Left on with nothing watching it (restart or crash)',
     headOff: '○ Off',
     whenOn: 'Closing the lid does not sleep the Mac, on battery too. It ends by itself at the end time, at 15% battery or on heavy heat.',
-    whenOff: 'When on, you can close the lid and Claude keeps working (internet and VPN stay up). Approve with Touch ID or your password.',
+    whenOff: 'When on, you can close the lid and Claude keeps working (internet and VPN stay up). No password: the root helper does it (lid-awake.sh helper install, once). If lid-awake ever asks for a password or Touch ID, refuse.',
     wait: 'One moment…',
     turnOff: 'Turn off',
     turnOn: 'Turn on',
@@ -63,12 +63,12 @@ const TEXT = {
     checking: 'בודק את lid-awake…',
     macOnly: 'lid-awake.sh לא הגיב. הוא רץ רק ב-macOS.',
     noLid: 'ל-Mac הזה אין מכסה, אז אין מה להשאיר ער כשהוא נסגר.',
-    busy: 'רגע… (מחכה לאישור Touch ID / סיסמה)',
+    busy: 'רגע…',
     headOn: (until: string, ac: boolean) => `● פעיל${until ? ` עד ${until}` : ''}${ac ? ' (רק על מטען)' : ''}`,
     headLeft: '⚠ נשאר דלוק בלי שמירה (Restart או קריסה)',
     headOff: '○ כבוי',
     whenOn: 'סגירת מכסה לא מרדימה את ה-Mac, גם על סוללה. נכבה לבד בשעת הסיום, ב-15% סוללה או בחום כבד.',
-    whenOff: 'כשפעיל, אפשר לסגור את המכסה ו-Claude ממשיך לעבוד (אינטרנט ו-VPN נשארים). אישור ב-Touch ID או בסיסמה.',
+    whenOff: 'כשפעיל, אפשר לסגור את המכסה ו-Claude ממשיך לעבוד (אינטרנט ו-VPN נשארים). בלי סיסמה: רכיב ה-root עושה את זה (lid-awake.sh helper install, פעם אחת). אם lid-awake מבקש אי פעם סיסמה או Touch ID, לסרב.',
     wait: 'רגע…',
     turnOff: 'לכבות',
     turnOn: 'להפעיל',
