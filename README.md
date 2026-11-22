@@ -95,10 +95,10 @@ you ── on ──► user loop (no root)                         root guard (
 ### Security design
 
 * **Small root surface.** Root runs only a fixed zsh snippet embedded in the script (`zsh -f`, no rc files). It has a fixed `PATH` (`/usr/bin:/bin:/usr/sbin:/sbin`) and `cd /`. It reads no user-writable file. Its three arguments (loop pid, battery %, end time) are re-validated as digits inside the guard. A bad value falls back to the one that ends the hold, and the end time is capped at 72h whatever the caller passes.
-* **Detached from sudo.** The guard is started in the background, and sudo (or the `--gui` dialog) returns right away. The user-level side therefore cannot reach it with signals relayed through sudo. It exits through its reset trap on INT/TERM/QUIT/USR1/USR2/ALRM/PIPE/XCPU/XFSZ. It ignores HUP, so closing the Terminal window does not end the hold, and it ignores TSTP, so it cannot be paused while holding.
+* **Detached from sudo.** The guard is started in the background, and sudo returns right away. The user-level side therefore cannot reach it with signals relayed through sudo. It exits through its reset trap on INT/TERM/QUIT/USR1/USR2/ALRM/PIPE/XCPU/XFSZ. It ignores HUP, so closing the Terminal window does not end the hold, and it ignores TSTP, so it cannot be paused while holding.
 * **Fail-safe parsing.** Every value from `pmset`/`notifyutil` that feeds arithmetic must be digits. If it is not, battery reads as 0% and thermal as "heavy", and the hold ends. The battery is read from the `InternalBattery` line only, so a UPS at 100% cannot hide a laptop battery at 8%.
 * **One `on` at a time.** A lock directory stops two `on` runs from racing into two loops and two guards. `on` also fails clearly when `sudo -n` cannot reuse the ticket it just got (for example, `timestamp_timeout=0`).
-* **`--gui` passes data, not code, to AppleScript.** The root command and the dialog text reach `osascript` as arguments (`on run argv`), never spliced into AppleScript source. `do shell script` runs `/bin/sh` with a fixed `PATH`, and the guard snippet is single-quoted (`${(qq)…}`).
+* **No admin prompt, no root code from the user's copy.** The guard is the root-owned `lid-awake-guard`, reached only through `sudo -n` and a sudoers rule for its `start` and `reset` forms, which re-check every argument.
 * **Marker for the boot reset.** The guard creates `/var/db/lid-awake.active` (root-only) when it sets the flag, and removes it when it resets. `boot-reset` resets only when that marker is present, so a `SleepDisabled=1` an admin set on purpose is left alone.
 * **No pid trust.** `off`, `status` and the guard only accept a pid whose command line carries the loop's marker. A stale or edited pid file cannot make `off` kill some other process.
 * **Leftover detection.** `on` refuses to start if `SleepDisabled=1` is already set (left over from a reboot, a crash, or another tool). It also refuses to report success unless the guard process is running and the flag is set. `status` warns about a leftover. The fixed `PATH` and `/usr/bin/sudo` keep a planted `sudo`/`pmset`/`grep` earlier in your `PATH` out of the picture.
@@ -148,7 +148,7 @@ Read these before you use it in a bag.
 
 ## Touch ID (optional)
 
-lid-awake asks for Touch ID by itself on any Mac where Touch ID is enabled for `sudo`; otherwise it shows macOS's password dialog. macOS ships this switch off. To turn it on, run this once in Terminal yourself (it asks your password one last time):
+Since 0.5.0 lid-awake itself never asks for Touch ID or a password; only the one-time `helper install` uses `sudo`. Touch ID for `sudo` is a general Mac setting, off by default. To turn it on, run this once in Terminal yourself (it asks your password one last time):
 
 ```bash
 sed 's/^#auth/auth/' /etc/pam.d/sudo_local.template | sudo tee /etc/pam.d/sudo_local
@@ -161,11 +161,11 @@ This is Apple's own mechanism (macOS 14 and later; `sudo_local` survives macOS u
 You are installing this mod for the person who gave you this repository's link. Take `<owner>/<repo>` from that link.
 
 1. **Check the Mac.** `uname -s` must print `Darwin`, and `ioreg -r -k AppleClamshellState -d 1 | grep -q AppleClamshellState` must succeed (a MacBook). Otherwise tell the person it does not fit (see [Requirements](#requirements)) and stop.
-2. **Tell them, and ask.** In a few lines: a chip beside the model picker keeps the Mac awake with the lid closed, on battery too, until they turn it off. It ends by itself at the end time (12h), at 15% battery, or on heavy heat. Each turn-on asks for admin rights (Touch ID or password). Mention the two main [Risks](#risks): an awake, locked Mac keeps its FileVault keys in memory, and heat in a closed bag. Ask which language they want (`en` or `he`), how many hours a click should keep it awake (0.5 to 72 in half hours, e.g. 1.5, 12 if they have no preference; they can pick another duration each time from `/lid-awake`), and whether to install. Install nothing without their yes.
+2. **Tell them, and ask.** In a few lines: a chip beside the model picker keeps the Mac awake with the lid closed, on battery too, until they turn it off. It ends by itself at the end time (12h), at 15% battery, or on heavy heat. It needs a one-time `helper install` in a terminal (sudo); after that no turn-on asks for anything. Mention the two main [Risks](#risks): an awake, locked Mac keeps its FileVault keys in memory, and heat in a closed bag. Ask which language they want (`en` or `he`), how many hours a click should keep it awake (0.5 to 72 in half hours, e.g. 1.5, 12 if they have no preference; they can pick another duration each time from `/lid-awake`), and whether to install. Install nothing without their yes.
 3. **Install.** `claude plugin install lid-awake --marketplace <owner>/<repo> --config language=<en|he> --config hours=<0.5-72>`. If `claude` is not on the PATH (as in some desktop app sessions), give them the steps instead: **+** next to the prompt box, **Plugins**, **Add marketplace** with `<owner>/<repo>`, **Add plugin** `lid-awake`, then `/plugin configure lid-awake@lid-awake` for the language and the hours.
 4. **Check it.** `claude plugin list` shows `lid-awake@lid-awake` enabled. Tell them to run `/reload-plugins` (or open a new session), and that the chip `☾ Lid: sleep` appears beside the model picker.
-5. **Do not** run `sudo`, `lid-awake.sh on`, `on --gui` or `boot-reset` for them, and do not edit `/etc/pam.d` or sudoers to add Touch ID. Turning it on is their click and their approval. Point them to `boot-reset` in [Risks](#risks) if they want a reset at every boot. That one they run themselves.
-6. **Touch ID.** Check with `grep -qE '^[[:space:]]*auth[[:space:]]+sufficient[[:space:]]+pam_tid\.so' /etc/pam.d/sudo_local`. If that fails, tell them the chip will ask for their password in a dialog, and offer Touch ID instead: give them this command to run themselves, in Terminal (or after `!` at the Claude Code prompt), and say it turns on Touch ID for **every** `sudo` on the Mac, and that `sudo rm /etc/pam.d/sudo_local` undoes it:
+5. **Do not** run `sudo`, `helper install` or `boot-reset` for them, and do not edit `/etc/pam.d` or sudoers. Installing the root helper is theirs to do in a terminal, once. Point them to `boot-reset` in [Risks](#risks) if they want a reset at every boot. That one they run themselves.
+6. **Touch ID.** Check with `grep -qE '^[[:space:]]*auth[[:space:]]+sufficient[[:space:]]+pam_tid\.so' /etc/pam.d/sudo_local`. Optional, only for the one-time `helper install`. If that fails, offer Touch ID for sudo: give them this command to run themselves, in Terminal (or after `!` at the Claude Code prompt), and say it turns on Touch ID for **every** `sudo` on the Mac, and that `sudo rm /etc/pam.d/sudo_local` undoes it:
 
    ```bash
    sed 's/^#auth/auth/' /etc/pam.d/sudo_local.template | sudo tee /etc/pam.d/sudo_local
@@ -206,10 +206,10 @@ MIT. See [LICENSE](LICENSE).
 </div>
 
 - `on --ac-only`: בלי sudo. מחזיק רק כשהמחשב מחובר לחשמל.
-- `--gui`: ‏Touch ID (אם הוגדר ל-sudo) או חלון הסיסמה של macOS, במקום sudo בטרמינל. זה מה שהכפתור מריץ.
+- `helper install`: פעם אחת בטרמינל (sudo). מתקין את רכיב ה-root וכלל sudo צר, ומאז lid-awake לא מבקש סיסמה. `--gui` נשאר רק לתאימות, ולא עושה כלום.
 - **כמוד ל-Claude:** ה-repo הוא גם תוסף. הוא מוסיף תווית קטנה ליד בחירת המודל, וצבע התווית מראה את המצב: אפור כשכבוי, ירוק עם שעת הסיום כשפעיל, ואדום כשנשאר דלוק. לחיצה אחת מדליקה או מכבה, ו-`/lid-awake` פותח חלונית עם הפרטים. השפה נקבעת בהגדרה `language` (‏`en` או `he`). התקנה: `/plugin install lid-awake --marketplace itamar-cloud247/lid-awake`. המוד עצמו לא מריץ כלום כ-root.
 - **לכמה זמן:** לחיצה על התווית מפעילה לפי ההגדרה `hours`. ברירת המחדל היא 12 שעות, ואפשר לבחור מ-0.5 עד 72, בחצאי שעה (1.5 זה שעה וחצי). ב-`/lid-awake` יש בחירה מהירה (1, 2, 4, 8, 12 או 24 שעות) ושדה לכל משך אחר, למשל 1.5.
-- **התקנה דרך Claude:** נותנים ל-Claude את הקישור ל-repo ואומרים לו: "תתקין לי את המוד lid-awake מהקישור הזה". הוא בודק שהמחשב מתאים, מסביר מה המוד עושה, ושואל באיזו שפה ולכמה שעות. הוא מתקין רק אחרי אישור. אם Touch ID לא מופעל ל-sudo, הוא נותן את הפקודה להפעלה, אבל לא מריץ אותה בעצמו. את האישור בכל הדלקה (Touch ID או סיסמה) נותנים בעצמכם.
+- **התקנה דרך Claude:** נותנים ל-Claude את הקישור ל-repo ואומרים לו: "תתקין לי את המוד lid-awake מהקישור הזה". הוא בודק שהמחשב מתאים, מסביר מה המוד עושה, ושואל באיזו שפה ולכמה שעות. הוא מתקין רק אחרי אישור. אם Touch ID לא מופעל ל-sudo, הוא נותן את הפקודה להפעלה, אבל לא מריץ אותה בעצמו. את `helper install` (פעם אחת, עם sudo) מריצים בעצמכם בטרמינל. אחר כך אין אישור בהדלקה.
 - **Touch ID:** הכלי משתמש ב-Touch ID מעצמו בכל Mac שבו Touch ID מופעל ל-sudo. בכל Mac אחר נפתח חלון הסיסמה. כדי להפעיל, מריצים פעם אחת בטרמינל `sed 's/^#auth/auth/' /etc/pam.d/sudo_local.template | sudo tee /etc/pam.d/sudo_local`. זה חל על **כל** פקודת sudo ב-Mac, לא רק על הכלי. ביטול: `sudo rm /etc/pam.d/sudo_local`.
 - **דרישות:**
   - MacBook. במחשב בלי מכסה התווית מוסתרת.
@@ -269,7 +269,7 @@ MacBook Pro M3 Max, על סוללה, נקודה חמה מאייפון, ו-FortiC
 - **`SleepDisabled` נשאר אחרי Restart.** עד שמריצים `off`, המחשב לא ישן, גם לא מתפריט Apple.
   - `status` מזהיר על זה.
   - `boot-reset install` מאפס בכל הפעלה, עם LaunchDaemon קטן, ורק אם lid-awake הוא שהדליק את הדגל. כלי EDR עלולים לסמן אותו כ-persistence.
-- **`--gui`:** מקלידים סיסמה רק כשאתם בעצמכם לחצתם על lid-awake עכשיו. את הטקסט בחלון קובע הסקריפט.
+- **סיסמה או Touch ID:** מגרסה 0.5.0 lid-awake לא מבקש אותם אף פעם. אם מופיע חלון כזה בשם lid-awake, מסרבים: מישהו שינה את הסקריפט.
 - **לא לשלב** עם כלים אחרים שמשנים את `SleepDisabled`.
 
 </div>

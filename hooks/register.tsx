@@ -25,8 +25,9 @@ const TEXT = {
     chipLeft: '⚠ Sleep disabled',
     chipOff: '☾ Lid: sleep',
     turnedOn: 'Lid closed: on. The Mac stays awake until you turn it off, on battery too.',
-    notOn: 'Not turned on (approval cancelled?)',
+    notOn: 'Not turned on. Is the root helper installed? Run lid-awake.sh helper install once in a terminal.',
     offReset: 'Lid closed: off (SleepDisabled reset to 0)',
+    offFailed: 'Off FAILED: SleepDisabled is still 1, the Mac will NOT sleep with the lid closed. Run lid-awake.sh off in a terminal.',
     off: 'Lid closed: off. Closing the lid sleeps as usual.',
     noAnswer: 'lid-awake.sh did not answer',
     checking: 'Checking lid-awake…',
@@ -56,8 +57,9 @@ const TEXT = {
     chipLeft: '⚠ שינה כבויה',
     chipOff: '☾ מכסה: ישן',
     turnedOn: 'מכסה סגור: פעיל. ה-Mac יישאר ער עד שתכבה, גם על סוללה',
-    notOn: 'לא הופעל (האישור בוטל?)',
+    notOn: 'לא הופעל. האם רכיב ה-root מותקן? מריצים פעם אחת בטרמינל: lid-awake.sh helper install',
     offReset: 'מכסה סגור: כבוי (SleepDisabled הוחזר ל-0)',
+    offFailed: 'הכיבוי נכשל: SleepDisabled עדיין 1, וה-Mac לא יירדם עם מכסה סגור. מריצים בטרמינל: lid-awake.sh off',
     off: 'מכסה סגור: כבוי. סגירת מכסה תרדים כרגיל',
     noAnswer: 'lid-awake.sh לא הגיב',
     checking: 'בודק את lid-awake…',
@@ -128,11 +130,11 @@ async function toggle($: Engine, t: Strings, hours: number): Promise<void> {
   const turnOn = !cur.on && !cur.sleepDisabled
   await update($, lid, prev => ({ ...prev, busy: true }))
   try {
-    // Touch ID or the password dialog waits for the person, so allow two minutes
+    // no prompt any more (root helper); `off` may wait ~15 s for the guard to let go
     const args = turnOn ? ['on', '--gui', '--hours', String(hours)] : ['off', '--gui']
-    const { exitCode, stdout } = await $.process.run(script($, args), { timeoutMs: 120_000 })
+    const { exitCode, stdout } = await $.process.run(script($, args), { timeoutMs: 45_000 })
     if (turnOn) $.ui.toast(exitCode === 0 ? t.turnedOn : t.notOn)
-    else $.ui.toast(/still 1/.test(stdout) ? t.offReset : t.off)
+    else $.ui.toast(exitCode !== 0 ? t.offFailed : /still 1/.test(stdout) ? t.offReset : t.off)
   } catch {
     $.ui.toast(t.noAnswer)
   } finally {

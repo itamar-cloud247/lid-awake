@@ -35,7 +35,7 @@ mkdir -p "$STATE" "${LOG:h}"
 running() { [[ -f $PIDF && $(<$PIDF) == <-> ]] && ps -p "$(<$PIDF)" -o command= 2>/dev/null | grep -qF -- " $TAG " }
 guard_alive() { pgrep -u root -f -- "lid-awake-guard (run )?$1 " >/dev/null }
 # The helper counts only if root owns it and every folder above it, none writable by group/others, and the sudoers rule
-# lets us run it without a password. Otherwise the older admin-prompt path is used.
+# lets us run it without a password. Without it only --ac-only works (lid-awake never asks for admin rights).
 root_only() { local p=$1 m; while [[ $p != / ]]; do
   [[ -e $p && ! -L $p && $(stat -f %u "$p") == 0 && -z $(ls -led "$p" | sed 1d) ]] || return 1
   m=$(stat -f %Lp "$p"); (( (8#$m & 8#22) == 0 )) || return 1; p=${p:h}; done }
@@ -81,7 +81,7 @@ case "${1:-}" in
     ! running && sleep_disabled && print "WARNING: SleepDisabled=1 with no loop (reboot or crash during a hold?): run '$ME off'"
     [[ -e $MARK ]] && print "marker $MARK: set (lid-awake set SleepDisabled=1)"
     [[ -f $BOOT_PLIST ]] && print "boot-reset: installed" || print "boot-reset: not installed"
-    helper_ok && print "root helper: installed ($HELPER, no password)" || print "root helper: not installed (admin prompt each time; '$ME helper install')"
+    helper_ok && print "root helper: installed ($HELPER, no password)" || print "root helper: not installed (only --ac-only works; '$ME helper install')"
     pmset -g assertions | grep -E 'caffeinate|Claude'; tail -5 "$LOG" 2>/dev/null; exit 0 ;;
   state)   # one line: on|off <SleepDisabled 0|1> <until HH:MM|-> <full|ac|-> <lid|nolid>
     if running; then
@@ -138,10 +138,12 @@ case "${1:-}" in
           mv -f $t /etc/sudoers.d/lid-awake
           print "installed $h"' lid-awake-install "$src" "$user" || exit 1
         print "check it yourself now, in a new command: shasum -a 256 $HELPER ; sudo -n -l"
+        /usr/bin/sudo -k   # drop the ticket just typed, so the check below proves the passwordless rule itself
         helper_ok && print "helper OK: lid-awake now starts the guard with no password prompt" ||
           { print "helper NOT usable (check: sudo -l)"; exit 1 }
         exit 0 ;;
       uninstall)
+        helper_ok && /usr/bin/sudo -n $HELPER reset   # end a running guard while it can still be reached
         /usr/bin/sudo /bin/rm -f /etc/sudoers.d/lid-awake $HELPER && /usr/bin/sudo /bin/rmdir ${HELPER:h} 2>/dev/null
         print "removed the helper and its sudoers rule"; exit 0 ;;
       *) usage ;;
@@ -201,7 +203,7 @@ bye() {
 trap bye EXIT
 trap 'exit 0' INT TERM
 log "start until=$(date -r $end '+%F %H:%M') min_batt=$MIN_BATT ac_only=$ACONLY until_idle=$UNTIL_IDLE"
-# `on` starts the guard after us, and with --gui only once the password dialog is answered; it kills us if that fails.
+# `on` starts the guard right after us through the root helper; it kills us if that fails.
 (( ACONLY )) || for i in {1..180}; do guard_alive $$ && break; sleep 1; done
 while :; do
   now=$(date +%s)
